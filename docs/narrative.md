@@ -52,14 +52,41 @@ See `CLAUDE.md`.
 
 - **Trigger** — the stakeholder message or event that opens the beat.
 - **Build** — what the learner is expected to implement.
-- **Complication** — the realistic problem introduced. Not revealed all at once; the learner
-  investigates.
+- **Complication** — a realistic *operational* problem: correct build, system still
+  misbehaves. Not revealed all at once; the learner investigates. Only beats with such a
+  problem carry this field.
+- **Checkpoint** — what the learner is questioned on before the PR merges. See the note
+  below.
 - **Lesson** — the intended takeaway.
 - **Roadmap ref** — this beat's number in the overall arc (1–22). `README.md` carries only
   an Act-level summary; this file is the roadmap of record.
 
 Failures are deliberately varied in root cause: application bug, Kubernetes/config error,
 database/dependency failure, or the monitored target genuinely being down.
+
+### How complications and assessment work with an LLM in the loop
+
+The learner pair-programs with an LLM, so "you wrote a subtle bug, now debug it" does not
+happen by accident — the code arrives correct — and any mechanism that asks the learner to
+*write something* (a prediction, a design note, the PR body) is defeated the same way.
+See ADR-0012.
+
+- **Operational complications stay.** The build is correct and the system still misbehaves
+  because of how the pieces fit together (image never loaded into kind, a Service
+  `targetPort` mismatch, a stale ReplicaSet, the wrong `kubectl` context). Diagnosed **live
+  under gauntlet rules**: while the learner is diagnosing, Claude answers only *as the
+  system would* — logs, `kubectl describe`, events, metric values in response to the right
+  question — and does **not** volunteer the diagnosis. This is the Beat 4.4 model applied
+  throughout, and it holds whenever the learner is mid-diagnosis.
+- **Every beat ends with a Checkpoint.** After the code is done and **before the PR
+  merges**, Claude questions the learner on what was built, why, and what would break — one
+  question at a time, waiting for each answer before asking the next, ~4–6 in total. The
+  learner answers in chat, cold — no reading the diff first, no help. Claude then assesses:
+  for each item it shows the question, the learner's answer, and the verdict / correct
+  answer together, so nothing has to be scrolled to. Weak answers are re-run.
+  **A weak checkpoint blocks the merge.** Claude records the exchange as a *Checkpoint*
+  section in the PR body (each question with a one-line verdict, gaps found and closed).
+  Gauntlet rules apply during it: Claude asks and assesses, it does not teach.
 
 ---
 
@@ -84,14 +111,22 @@ database/dependency failure, or the monitored target genuinely being down.
 ### Beat 1.2 — Containerise
 
 - **Trigger.** Andy: "If you want this anywhere near the cluster it needs to be an image."
-- **Build.** `Dockerfile` (Python 3.12, `uv` for dependency install from `pyproject.toml`),
-  `.dockerignore`; a tag scheme based on the git short SHA (no `latest`). One image, two
-  entrypoints — the container command selects `api` or `checker`. Build and run locally;
-  confirm the API answers on the published port.
-- **Complication.** One realistic Docker gotcha: wrong port exposed, a dev-only dependency
-  missing from the image, or the app binding to `127.0.0.1` instead of `0.0.0.0`.
-- **Lesson.** Source vs. build artifact vs. image vs. container. Build context. Why the
-  container environment differs from the laptop.
+- **Build.** Multi-stage `Dockerfile` (`uv` resolves the venv in a build stage; a slim,
+  non-root runtime stage carries only Python and the venv), `.dockerignore`, and a
+  `python -m beacon <api|checker>` entrypoint so one image serves both processes — the
+  container command selects. `Makefile` targets tag the image with the git short SHA
+  (no `latest`). Build and run both entrypoints under Docker; confirm the API answers on
+  the published port and the checker starts its loop.
+- **Checkpoint.** No live complication this beat. Questioning covers: source vs. build
+  artifact vs. image vs. container; why the app must bind `0.0.0.0` and not `127.0.0.1`,
+  and how that failure would present; what a runtime dependency left in the dev group does
+  at `docker run` time versus at build time; `containerPort` / published-port / app-listen
+  mismatch; what the build context is and why `.dockerignore` and layer ordering
+  (`pyproject.toml` / `uv.lock` before the source) matter; what the multi-stage split buys
+  and what is in the runtime image versus the build stage.
+- **Lesson.** Source vs. build artifact vs. image vs. container. Build context and layer
+  caching. Why the container environment differs from the laptop. Multi-stage builds: the
+  build toolchain does not ship in the runtime image.
 - **Roadmap ref.** 2.
 
 ### Beat 1.3 — Deploy to kind

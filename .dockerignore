@@ -1,0 +1,22 @@
+# Keep the build context minimal — only what the image needs.
+.git/
+.github/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.python-version
+.pre-commit-config.yaml
+
+# Not needed in the image
+tests/
+docs/
+kind/
+k8s/
+Makefile
+CLAUDE.md
+CONTEXT.md
+*.md
+!README.md
