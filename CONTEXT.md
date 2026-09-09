@@ -42,6 +42,12 @@ _Avoid_: server, backend, web.
 The Beacon component that performs probes and opens/closes Incidents.
 _Avoid_: worker, poller, scheduler, agent.
 
+**frontend**:
+The Beacon component that serves the browser UI — a Vue single-page app, built as its own
+image and served by nginx. Reaches `api` through the Ingress.
+_Avoid_: client, UI, web, dashboard (the *page* it renders can be called a dashboard; the
+component is the frontend).
+
 ### Operations
 
 **environment**:

@@ -20,8 +20,9 @@ From that point on, *every* change ships the same way:
 > edit code → build image with an immutable tag → load into kind → update the manifest →
 > `kubectl rollout` → observe
 
-New capabilities (history, Postgres, config, probes, splitting the checker, StatefulSets,
-CI/CD) are then layered on top of an app that is *already running in the cluster*. The
+New capabilities (history, a Vue frontend and an Ingress, Postgres, config, probes,
+splitting the checker, StatefulSets, CI/CD) are then layered on top of an app that is
+*already running in the cluster*. The
 deployment loop is the spine of the course, not a chapter in the middle.
 
 **Environments arrive in two stages.** Acts 1–3 run entirely against a single `beacon-dev`
@@ -54,7 +55,7 @@ See `CLAUDE.md`.
 - **Complication** — the realistic problem introduced. Not revealed all at once; the learner
   investigates.
 - **Lesson** — the intended takeaway.
-- **Roadmap ref** — this beat's number in the overall arc (1–20). `README.md` carries only
+- **Roadmap ref** — this beat's number in the overall arc (1–22). `README.md` carries only
   an Act-level summary; this file is the roadmap of record.
 
 Failures are deliberately varied in root cause: application bug, Kubernetes/config error,
@@ -131,11 +132,54 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Build.** `CheckResult` (append-only), `Incident` (opens after N consecutive failures,
   closes on recovery), `/monitors/{id}/uptime`, `/incidents`, `/status`. Ship through the
   loop.
-- **Complication.** None yet — the trap is set in 2.2.
+- **Complication.** None yet — the trap is set in 2.4.
 - **Lesson.** Deriving uptime from incidents rather than scanning every result.
 - **Roadmap ref.** 5.
 
-### Beat 2.2 — Pods are ephemeral
+### Beat 2.2 — A page for the demo
+
+- **Trigger.** Michael: "The JSON is fine for you. I can't pull up a page of raw API
+  responses in front of anyone. I need something I can show in a demo — a list of what
+  we're watching, green or red, the uptime numbers, recent incidents."
+- **Build.** A **Vue single-page app** (Vite), read-only: renders `/monitors`, `/status`,
+  and `/incidents`. Its own container image — a **multi-stage build** (`node` build stage →
+  static `dist/` copied into an `nginx` image) — and its own `Deployment` (1 replica) and
+  `Service`, separate from `api` (ADR-0011). No Ingress yet: the app is reached with one
+  `kubectl port-forward` for the page and a second for the API, and the build takes the API
+  base URL from `VITE_API_URL` pointed at that second forward.
+- **Complication.** The two-port-forward setup is the problem. The API base URL is only
+  correct because a forward happens to be running on that exact port; drop it or change the
+  port and every call fails. Page and API are now different origins, so the browser blocks
+  responses until CORS headers are added to `api` — configuration that exists only to prop
+  up the port-forward workaround. Forwards die silently when a Pod restarts mid-demo.
+- **Lesson.** A browser is a client that lives outside the cluster and cannot resolve
+  cluster DNS. Same-origin vs. cross-origin. A frontend Pod is easy; wiring a browser to
+  reach two Services is not. Multi-stage image builds: the build toolchain does not ship in
+  the runtime image.
+- **Roadmap ref.** 6.
+
+### Beat 2.3 — One front door
+
+- **Trigger.** Andy: "Two port-forwards to look at one app is ridiculous. Put an Ingress in
+  front of it."
+- **Build.** Install an Ingress controller (`ingress-nginx`) into the `beacon-dev` kind
+  cluster — `Makefile` target plus `extraPortMappings` in `kind/dev.yaml` so a laptop port
+  reaches the controller. One `Ingress`: `beacon.dev.local/` → the frontend `Service`,
+  `beacon.dev.local/api` → the `api` `Service`, with a `/api` prefix strip. A `beacon.dev.local`
+  entry in `/etc/hosts` (the `.dev.` is deliberate — staging and prod hosts arrive in
+  Act 4). The Vue app switches to a **relative `/api`** base URL — same
+  origin — so the baked-in `VITE_API_URL` and the CORS headers from Beat 2.2 both go away.
+  Note for later: anything genuinely per-environment in the frontend build returns in Act 4.
+- **Complication.** kind routes nothing until the `extraPortMappings` and the controller
+  line up. A path-rewrite mistake so `beacon.dev.local/api/monitors` reaches `api` as
+  `/api/monitors` (404) instead of `/monitors`. A 404 that is the Ingress, not the app.
+- **Lesson.** Pod → Service (stable internal address) → Ingress (HTTP routing from outside
+  to Services). An Ingress object is inert rules; an Ingress controller is just Pods running
+  a reverse proxy. Collapsing two entry points to one origin removes a class of problems
+  (CORS, per-client URLs) rather than working around them.
+- **Roadmap ref.** 7.
+
+### Beat 2.4 — Pods are ephemeral
 
 - **Trigger.** After the next rollout (or a `kubectl delete pod`), Michael: "Why is all our
   uptime history back to 100%? We had an incident logged this morning."
@@ -144,11 +188,11 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Complication.** Every rollout and every rescheduled Pod wipes all history.
 - **Lesson.** Pods are disposable by design; application instances are cattle. State that
   must survive a Pod cannot live inside one. This is the forcing function for a database.
-- **Roadmap ref.** 6.
+- **Roadmap ref.** 8.
 
-### Beat 2.3 — PostgreSQL
+### Beat 2.5 — PostgreSQL
 
-- **Trigger.** Following 2.2: give Beacon somewhere durable to write.
+- **Trigger.** Following 2.4: give Beacon somewhere durable to write.
 - **Build.** Add a `PostgresStorage` implementation of the `Storage` protocol — SQLAlchemy
   2.0 ORM, synchronous, typed models (ADR-0009). Docker Compose runs Postgres for the local
   dev inner loop. In the cluster, Postgres runs as a `Deployment` with an `emptyDir` volume
@@ -159,9 +203,9 @@ database/dependency failure, or the monitored target genuinely being down.
   connections and crashes once.
 - **Lesson.** Cluster DNS and Service names. The app now has a dependency it doesn't
   control the lifecycle of. Swapping a `Storage` implementation without touching call sites.
-- **Roadmap ref.** 7.
+- **Roadmap ref.** 9.
 
-### Beat 2.4 — Config out of the image
+### Beat 2.6 — Config out of the image
 
 - **Trigger.** Andy: "The DB connection details are baked into the image. That's not going
   to fly once there's more than one environment."
@@ -174,9 +218,9 @@ database/dependency failure, or the monitored target genuinely being down.
   Diagnose from `kubectl describe`, logs, and the restart count / backoff.
 - **Lesson.** Config is separate from the image and separately deployable. A bad config
   presents identically to a bad app until you read the error.
-- **Roadmap ref.** 8.
+- **Roadmap ref.** 10.
 
-### Beat 2.5 — Migrations
+### Beat 2.7 — Migrations
 
 - **Trigger.** A schema change is needed — e.g. an index on `check_result (monitor_id,
   checked_at)` because `/uptime` has gotten slow, or a new nullable column.
@@ -189,7 +233,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** Migrations are code that runs against real data. Forward/backward
   compatibility during a rolling update (old and new code briefly coexist). Ordering of
   "migrate" vs. "new pods".
-- **Roadmap ref.** 9.
+- **Roadmap ref.** 11.
 
 ---
 
@@ -211,7 +255,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** Readiness gates traffic; liveness gates restarts; they are not
   interchangeable. Kubernetes does **not** roll back a Deployment just because the new Pods
   never become Ready — the old ReplicaSet stays up and the rollout simply stalls.
-- **Roadmap ref.** 10.
+- **Roadmap ref.** 12.
 
 ### Beat 3.2 — Resource requests and limits
 
@@ -224,7 +268,7 @@ database/dependency failure, or the monitored target genuinely being down.
   with `FailedScheduling`.
 - **Lesson.** Requests drive scheduling; limits are enforced hard. What "the scheduler
   couldn't place this Pod" looks like.
-- **Roadmap ref.** 11.
+- **Roadmap ref.** 13.
 
 ### Beat 3.3 — Scale the API, split the checker
 
@@ -238,7 +282,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** Stateless replicas behind a Service are easy. A background worker is not
   stateless-by-nature — running N copies changes behaviour. Separating workloads that scale
   differently.
-- **Roadmap ref.** 12.
+- **Roadmap ref.** 14.
 
 ### Beat 3.4 — Should Postgres even be in the cluster?
 
@@ -253,7 +297,7 @@ database/dependency failure, or the monitored target genuinely being down.
   *reasoning* is the exercise, and it is exactly the kind of tradeoff an interviewer probes.
 - **Lesson.** Not every workload belongs in Kubernetes. Recognising when a constraint (not
   an engineering preference) is driving an architecture decision.
-- **Roadmap ref.** 13.
+- **Roadmap ref.** 15.
 
 ### Beat 3.5 — StatefulSet and PVC
 
@@ -267,7 +311,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** Pod lifecycle and storage lifecycle are separate, and storage is
   deliberately sticky. What a StatefulSet gives you (stable identity, ordered rollout,
   per-Pod storage) and what it does **not** (replication, failover, backups).
-- **Roadmap ref.** 14.
+- **Roadmap ref.** 16.
 
 ### Beat 3.6 — Multiple checker replicas
 
@@ -280,7 +324,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** Horizontally scaling a worker needs an explicit coordination mechanism.
   DB-level locking vs. leader election vs. a real queue — the tradeoffs, and why "just add
   replicas" is safe for `api` but not for `checker`.
-- **Roadmap ref.** 15.
+- **Roadmap ref.** 17.
 
 ### Beat 3.7 — A metrics endpoint
 
@@ -294,7 +338,7 @@ database/dependency failure, or the monitored target genuinely being down.
   scrape because it's per-request state).
 - **Lesson.** Instrumentation as a first-class concern; the difference between logs (events)
   and metrics (aggregates); why you don't need the whole observability stack to get value.
-- **Roadmap ref.** 16.
+- **Roadmap ref.** 18.
 
 ---
 
@@ -312,7 +356,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** The pipeline as: source → build artifact → image → registry → Deployment
   update → rollout → Pods. Immutable tags are what make that chain auditable and
   reversible.
-- **Roadmap ref.** 17.
+- **Roadmap ref.** 19.
 
 ### Beat 4.2 — Staging and production
 
@@ -323,7 +367,9 @@ database/dependency failure, or the monitored target genuinely being down.
     `make prod-up`; `kind/staging.yaml`, `kind/prod.yaml`).
   - Restructure manifests into kustomize `base/` + `overlays/{dev,staging,prod}/` (ADR-0006).
     Overlays vary replica count, resource requests/limits, log level, image tag, and per-env
-    Secret/ConfigMap values. Each environment gets its own isolated Postgres (ADR-0005).
+    Secret/ConfigMap values — for `api`, `checker`, the `frontend`, and the `Ingress` host
+    (`beacon.dev.local` / `beacon.staging.local` / `beacon.prod.local`). Each environment
+    gets its own isolated Postgres (ADR-0005).
   - Promotion (ADR-0007): merge → dev automatically; a gated `workflow_dispatch` (GitHub
     Environments, self-review) re-points the **staging** then **prod** overlay at the
     already-built, already-tested SHA tag — no rebuild. Each promotion is a commit bumping
@@ -332,10 +378,18 @@ database/dependency failure, or the monitored target genuinely being down.
     watches "real" Northstar services) — target lists are DB data, not overlay config.
 - **Complication.** "Works in dev, not in staging": an overlay patch typo, a Secret that was
   only ever created in the dev cluster, or a `kubectl` context left pointing at the wrong
-  cluster.
+  cluster. And the frontend: the *same* `frontend` image promoted from dev now needs a
+  per-environment value it can't have — anything baked at `vite build` time is frozen into
+  the image and can't differ per env without a rebuild, which ADR-0007 forbids. Fix it with
+  **runtime config injection**: nginx serves a small `/config.json` (or an `envsubst`'d
+  `config.js`) populated from a per-env `ConfigMap` at container start, and the app reads it
+  on boot. The relative `/api` base URL from Beat 2.3 still needs no config; genuinely
+  per-env values (labels, feature flags, external links) go through `/config.json`.
 - **Lesson.** Build once, promote the artifact. `kubectl` contexts and the danger of the
   ambient one. What legitimately differs between environments vs. what must be identical.
-- **Roadmap ref.** 18.
+  For a static SPA, build-time config breaks promotion — per-env config has to arrive at
+  runtime, the same way it does for the backend.
+- **Roadmap ref.** 20.
 
 ### Beat 4.3 — Ship, then roll back
 
@@ -348,7 +402,7 @@ database/dependency failure, or the monitored target genuinely being down.
 - **Lesson.** Rolling update mechanics (`maxSurge` / `maxUnavailable`); partial failure
   mid-rollout; Kubernetes does not auto-roll-back; rollback is promoting a known-good
   artifact, not a rebuild; what state the database is left in.
-- **Roadmap ref.** 19.
+- **Roadmap ref.** 21.
 
 ### Beat 4.4 — The gauntlet
 
@@ -363,7 +417,7 @@ across categories.
 | **v2.2** | `api` returns 503, `checker` in `CrashLoopBackOff` | Postgres PVC full / Pod evicted | A dependency is down. Beacon is behaving correctly. |
 | **v2.3** | Behaviour differs between Pods for the "same" version | A stale ReplicaSet still serving / a node with an old cached image | Not every Pod is running what you think it is. |
 
-- **Roadmap ref.** 20.
+- **Roadmap ref.** 22.
 
 ---
 

@@ -105,13 +105,17 @@ concrete reason the database chapters matter.
 
 ## Components
 
-Beacon is two logical components:
+Beacon is three logical components:
 
 - **api** — the FastAPI service above.
 - **checker** — a loop that finds monitors whose next check is due, probes them, writes
   `CheckResult`s, and opens/closes `Incident`s.
+- **frontend** — a Vue single-page app that renders the status page, uptime numbers, and
+  incident history, read-only. Its own image (multi-stage build, served by nginx); reaches
+  `api` through an Ingress. Introduced in Act 2, not Act 1 (ADR-0011).
 
-They start fused: the checker runs as a background task **inside the api process**, on
+The api and checker start fused: the checker runs as a background task **inside the api
+process**, on
 in-memory data — that is what gets containerised and deployed to kind first. How and when
 they come apart — the checker into its own Deployment, then multiple checker replicas with a
 real stateful-coordination problem (`SELECT … FOR UPDATE SKIP LOCKED` / leader election) —
@@ -120,13 +124,14 @@ is driven by specific beats in `docs/narrative.md`, not decided up front.
 ## Target architecture (built up gradually, not all at once)
 
 - Python 3.12 / FastAPI application, plus the checker worker; `uv` + `pyproject.toml`
+- A Vue 3 / Vite single-page frontend, built into its own nginx image (multi-stage build)
 - One container image, two entrypoints (`api` / `checker`); immutable git-SHA tags
 - PostgreSQL for persistent data, via a `Storage` interface (SQLAlchemy 2.0 ORM + Alembic)
 - Docker Compose for the local dev database
 - Kubernetes for orchestration: three local **kind** clusters (`dev` / `staging` / `prod`)
 - Kubernetes objects introduced as they become relevant:
-  Deployments, Services, ConfigMaps, Secrets, readiness/liveness probes,
-  resource requests/limits, PVCs, StatefulSets, Jobs
+  Deployments, Services, Ingress (+ an ingress-nginx controller), ConfigMaps, Secrets,
+  readiness/liveness probes, resource requests/limits, PVCs, StatefulSets, Jobs
 - kustomize `base/` + `overlays/{dev,staging,prod}/` for per-environment config
 - GitHub Actions for CI/CD: tests → image build → push to GHCR → deploy to dev → gated
   promotion to staging and prod → rollback
@@ -141,8 +146,9 @@ the promotion pipeline arrive in Act 4.
 
 - **Act 1 — Into the cluster.** Minimal service → containerise → deploy to kind → make the
   deploy loop routine.
-- **Act 2 — State forces the architecture.** Add history → feel Pod ephemerality → introduce
-  PostgreSQL → move config out of the image → database migrations.
+- **Act 2 — State forces the architecture.** Add history → a Vue frontend behind an Ingress
+  → feel Pod ephemerality → introduce PostgreSQL → move config out of the image → database
+  migrations.
 - **Act 3 — Running it properly.** Readiness vs. liveness → resource requests and limits →
   scale the api and split out the checker → the managed-vs-in-cluster database decision →
   StatefulSet + PVC → multiple checker replicas and coordination → a metrics endpoint.
@@ -156,8 +162,9 @@ played. What actually happened is the git history, the merged PRs, and the close
 
 ## Tech stack
 
-Python 3.12, `uv`, FastAPI, pytest, SQLAlchemy 2.0 + Alembic, PostgreSQL, Docker, Docker
-Compose, kind, kubectl, kustomize, GitHub Actions, GHCR.
+Python 3.12, `uv`, FastAPI, pytest, SQLAlchemy 2.0 + Alembic, PostgreSQL, Vue 3, Vite,
+vitest, nginx, Docker, Docker Compose, kind, kubectl, kustomize, ingress-nginx, GitHub
+Actions, GHCR.
 
 Out of scope unless a concrete need arises: Redis, Kafka, microservices, cloud
 infrastructure, authentication, Helm, a Prometheus/Grafana deployment, GitOps controllers.
@@ -188,15 +195,17 @@ beacon/               application package
   checker/            the checker worker
   storage/            Storage protocol + in-memory and Postgres implementations
   models.py           shared domain models
+frontend/             Vue 3 / Vite single-page app (own image, nginx-served)
 tests/                pytest suite
 migrations/           Alembic migrations
 pyproject.toml
-Dockerfile
+Dockerfile            api / checker image
+frontend/Dockerfile   multi-stage frontend image (node build -> nginx)
 docker-compose.yml    local dev database
-Makefile              cluster provisioning + bootstrap
+Makefile              cluster provisioning + bootstrap (incl. ingress-nginx)
 kind/                 per-environment kind cluster configs
 k8s/
-  base/               shared Kubernetes manifests
+  base/               shared Kubernetes manifests (api, checker, frontend, ingress)
   overlays/           dev / staging / prod kustomize overlays
 .github/workflows/    CI/CD pipelines
 docs/
