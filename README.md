@@ -201,11 +201,59 @@ docker run --rm beacon:<short-sha> checker
 The build is multi-stage: `uv` resolves the virtualenv in the build stage; the runtime
 stage carries only Python and the venv, and runs as a non-root user.
 
+## Deploying to kind (dev)
+
+Beat 1.3: the image runs on a local **kind** cluster, `beacon-dev`. One `Deployment`
+(1 replica, checker still in-process) and a `ClusterIP` `Service`; the API is reached with
+`kubectl port-forward` (an Ingress replaces that in Beat 2.3). Manifests are kustomize:
+`k8s/base/` + `k8s/overlays/dev/`, the overlay pinning the immutable git-SHA image tag.
+
+### Prerequisites
+
+| Tool | Why | Install (macOS) |
+|------|-----|-----------------|
+| **Docker** | kind runs the cluster as a container; the image is built here | Docker Desktop — must be **running** before `make dev-up` |
+| **kind** | provisions the local Kubernetes cluster | `brew install kind` |
+| **kubectl** | talks to the cluster; also provides the kustomize build (`apply -k`) | `brew install kubectl` |
+
+No standalone `kustomize` binary is needed — `kubectl` has it built in. Verify the setup:
+
+```
+docker info >/dev/null && kind version && kubectl version --client
+```
+
+### Make targets
+
+| Command | What it does |
+|---------|--------------|
+| `make dev-up` | Create the `beacon-dev` kind cluster from `kind/dev.yaml`. Sets the `kind-beacon-dev` kubectl context. |
+| `make dev-down` | Delete the `beacon-dev` cluster. |
+| `make image` | `docker build` the image, tagged `beacon:<git short SHA>`. |
+| `make kind-load` | Build (via `make image`) and side-load the image into the kind node — kind has no registry access, so nothing is *pulled*. |
+| `make deploy-dev` | Full deploy loop: `kind-load`, rewrite `k8s/overlays/dev` to the current SHA, `kubectl apply -k`, then wait on `kubectl rollout status`. |
+| `make dev-status` | `kubectl get deploy,rs,pod,svc -l app=beacon` — the get/describe/logs loop starts here. |
+
+### First deploy
+
+```
+make dev-up
+make deploy-dev
+
+# reach the API (Service listens on 80, forwards to the container's 8000)
+kubectl --context kind-beacon-dev port-forward svc/beacon-api 8000:80
+curl localhost:8000/health/live        # {"status":"ok"}
+
+make dev-down                          # when you're done
+```
+
+Override the image name with `make image IMAGE=beacon-local`; the SHA tag is always the
+current `git rev-parse --short HEAD`.
+
 ## Status
 
-Beat 1.2 in progress: the Beat 1.1 service, now containerised — a multi-stage `Dockerfile`,
-`.dockerignore`, and a `python -m beacon <api|checker>` entrypoint behind a single image.
-Runs under Docker locally; not yet on Kubernetes.
+Beat 1.3 in progress: the containerised service now deploys to the `beacon-dev` kind
+cluster — `kind/dev.yaml`, kustomize manifests under `k8s/`, and `Makefile` targets for
+provisioning, image side-load, and rollout. Reached via `kubectl port-forward`.
 
 ## Repository layout (planned)
 

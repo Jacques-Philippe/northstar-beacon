@@ -1,0 +1,30 @@
+# The api workload. The checker still runs in-process inside this Pod (it splits into
+# its own Deployment in Beat 3.3).
+#
+# One replica for now — Beat 3.3 scales it and surfaces why the in-process checker
+# cannot come along. No probes or resource requests/limits yet: real readiness/liveness
+# probes are Beat 3.1, requests/limits are Beat 3.2.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beacon-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beacon
+      component: api
+  template:
+    metadata:
+      labels:
+        app: beacon
+        component: api
+    spec:
+      containers:
+        - name: api
+          # Tag is set per-environment by the overlay (kustomize `images:`). Never `latest`.
+          image: beacon:overlay-sets-this
+          args: ["api"]
+          ports:
+            - name: http
+              containerPort: 8000
