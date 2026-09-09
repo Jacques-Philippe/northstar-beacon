@@ -23,4 +23,5 @@ cluster*.
 
 ## Consequences
 
-The roadmap in `README.md` and the beats in `docs/narrative.md` are ordered around this.
+The beats in `docs/narrative.md` — and the Act-level summary in `README.md` — are ordered
+around this.

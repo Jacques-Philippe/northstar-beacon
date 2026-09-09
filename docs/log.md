@@ -40,3 +40,12 @@ at the bottom.
   derived `status` (up/down/unknown), `/health/{live,ready}` stubs, `InMemoryStorage`,
   in-process `Checker`, `pydantic-settings` config, `.github/workflows/ci.yml`, 19 tests.
 - No `Makefile`/`kind/`/`Dockerfile` yet — their own beats.
+
+## 2026-09-09 — Docs: removed the duplicated roadmap
+
+- `README.md` and `docs/narrative.md` both carried the 20-step roadmap and had already
+  drifted once (`owning_team`). Single-sourced it: `README.md` now has only an Act-level
+  summary and points to `docs/narrative.md` as the roadmap of record. Dropped the numbered
+  beat list and the "Progression" list from `README.md`; removed `owning_team` from the
+  README domain-model table (it arrives in Beat 1.4). Updated ADR-0001 and ADR-0004 to
+  match. Kept two files (README = front door, narrative = script).

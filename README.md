@@ -28,7 +28,7 @@ the stakeholder will:
 - introduce feature-changing requirements, sometimes after the relevant thing is already built
 - change their mind, and re-prioritise
 
-The domain model, API surface, and roadmap below are the **current** picture. They are
+The domain model and API surface below are the **current** picture. They are
 expected to move as feedback lands, and history (what changed, why, and what it cost) is
 recorded in `docs/`. The full planned arc lives in `docs/narrative.md`. The learning is as
 much in absorbing changing requirements and diagnosing the failures that follow as in the
@@ -72,7 +72,7 @@ Mental model to keep returning to: **desired state → controllers → actual st
 
 | Entity | Description | Key fields |
 |--------|-------------|------------|
-| **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `owning_team`, `created_at` |
+| **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `created_at` |
 | **CheckResult** | The outcome of one probe. Append-only, high-volume. | `id`, `monitor_id`, `checked_at`, `ok`, `status_code`, `response_ms`, `error` |
 | **Incident** | Opens after N consecutive failing checks, closes on recovery. | `id`, `monitor_id`, `started_at`, `resolved_at`, `cause` (last error) |
 
@@ -105,25 +105,17 @@ concrete reason the database chapters matter.
 
 ## Components
 
-Beacon is two logical components. They start fused and separate *when the architecture
-demands it*, not up front:
+Beacon is two logical components:
 
 - **api** — the FastAPI service above.
 - **checker** — a loop that finds monitors whose next check is due, probes them, writes
   `CheckResult`s, and opens/closes `Incident`s.
 
-Progression:
-
-1. The checker runs as a background task **inside the api process** — one process,
-   in-memory data. This is what gets containerised and deployed to kind first.
-2. History (uptime, incidents) is added; a rollout or a rescheduled Pod wipes it, because
-   **Pods are ephemeral** → this forces PostgreSQL, for durability, not by decree.
-3. `api` is scaled to multiple replicas for availability — but now every target is probed
-   once per replica → the checker is split into **its own Deployment**.
-4. The single checker can't keep up → running multiple `checker` replicas causes
-   double-probing → a real stateful-coordination problem
-   (`SELECT … FOR UPDATE SKIP LOCKED` / leader election), a more honest lesson than
-   wrapping Postgres in a StatefulSet.
+They start fused: the checker runs as a background task **inside the api process**, on
+in-memory data — that is what gets containerised and deployed to kind first. How and when
+they come apart — the checker into its own Deployment, then multiple checker replicas with a
+real stateful-coordination problem (`SELECT … FOR UPDATE SKIP LOCKED` / leader election) —
+is driven by specific beats in `docs/narrative.md`, not decided up front.
 
 ## Target architecture (built up gradually, not all at once)
 
@@ -140,42 +132,27 @@ Progression:
   promotion to staging and prod → rollback
 - Prometheus `/metrics` endpoint (no Prometheus/Grafana deployment)
 
-## Roadmap
+## The arc
 
 The organising idea is **into the cluster fast**: a deliberately trivial version is running
-on kind by step 3, and everything after that is layered onto an app that is already
-deployed. See `docs/narrative.md` for the beat-by-beat story.
+on kind by Beat 1.3, and everything after that is layered onto an app that is already
+deployed. Acts 1–3 run against a single `beacon-dev` cluster; the other two environments and
+the promotion pipeline arrive in Act 4.
 
-Acts 1–3 run against a single `beacon-dev` cluster; the other two environments and the
-promotion pipeline arrive in Act 4.
+- **Act 1 — Into the cluster.** Minimal service → containerise → deploy to kind → make the
+  deploy loop routine.
+- **Act 2 — State forces the architecture.** Add history → feel Pod ephemerality → introduce
+  PostgreSQL → move config out of the image → database migrations.
+- **Act 3 — Running it properly.** Readiness vs. liveness → resource requests and limits →
+  scale the api and split out the checker → the managed-vs-in-cluster database decision →
+  StatefulSet + PVC → multiple checker replicas and coordination → a metrics endpoint.
+- **Act 4 — CI/CD, multiple environments, and the failure gauntlet.** Build the pipeline →
+  stand up staging and prod → ship a feature dev → staging → prod, then roll back → the
+  diagnosis gauntlet.
 
-**Act 1 — Into the cluster**
-1. Minimal FastAPI service: Monitor CRUD, in-memory (behind a `Storage` interface), in-process checker, `/health/*` stubs, JSON logging, tests
-2. Containerize it (Dockerfile, `uv`, one image / two entrypoints, immutable git-SHA tags)
-3. Deploy to the `beacon-dev` kind cluster: Deployment + Service, the `kubectl get/describe/logs` loop
-4. Make the deploy loop routine: ship a small change end-to-end (edit → build → load → apply → rollout)
-
-**Act 2 — State forces the architecture**
-5. Add history: CheckResults, Incidents, `/uptime`, `/status`
-6. Feel Pod ephemerality: a rollout wipes in-memory history
-7. Introduce PostgreSQL: `PostgresStorage` (SQLAlchemy), Compose for local dev, naive `emptyDir` Deployment in-cluster for now
-8. Move config out of the image: ConfigMaps and Secrets (manifests still flat)
-9. Database migrations (Alembic) run as a Job, and how they order against a rollout
-
-**Act 3 — Running it properly**
-10. Readiness vs. liveness probes
-11. Resource requests and limits
-12. Scale the api; split the checker into its own Deployment
-13. Decision (ADR): should PostgreSQL run in-cluster or be managed? (constrained to in-cluster by zero-spend)
-14. StatefulSet + PVC for PostgreSQL
-15. Multiple checker replicas and the double-probe coordination problem
-16. A Prometheus `/metrics` endpoint (no Prometheus/Grafana stack)
-
-**Act 4 — CI/CD, multiple environments, and the failure gauntlet**
-17. CI/CD pipeline: tests on PR → build + push SHA image on merge → auto-deploy to dev
-18. Stand up `staging` and `prod` clusters; kustomize base + overlays; gated build-once promotion
-19. Rolling deployment of a real feature through dev → staging → prod, then a deliberate rollback
-20. The failure gauntlet: app bug (500s), broken readiness probe, DB unavailable, stale-replica skew
+`docs/narrative.md` is the **roadmap of record**: the full beat-by-beat script, with each
+beat's trigger, build, complication, and lesson. `docs/log.md` records what actually
+happened.
 
 ## Tech stack
 

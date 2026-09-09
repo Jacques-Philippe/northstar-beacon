@@ -13,9 +13,11 @@ project would be, so that the artefacts themselves are part of the practice.
 
 ## Document roles
 
-- **`README.md`** — what Beacon is, its current domain model and API, the roadmap.
+- **`README.md`** — what Beacon is, its current domain model and API, and an Act-level
+  summary of the arc. It does **not** carry the beat list, to avoid drift against the script.
 - **`CLAUDE.md`** — working conventions and repo settings.
-- **`docs/narrative.md`** — the director's script: the planned beat-by-beat arc. Scope-of-record.
+- **`docs/narrative.md`** — the director's script: the planned beat-by-beat arc. The
+  roadmap of record.
 - **`docs/log.md`** — a running journal of what *actually* happened, including divergences
   from the script.
 - **`docs/adr/`** — architecture decision records. One decision per file,

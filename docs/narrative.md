@@ -52,7 +52,8 @@ See `CLAUDE.md`.
 - **Complication** — the realistic problem introduced. Not revealed all at once; the learner
   investigates.
 - **Lesson** — the intended takeaway.
-- **Roadmap ref** — corresponding step(s) in `README.md`'s roadmap.
+- **Roadmap ref** — this beat's number in the overall arc (1–20). `README.md` carries only
+  an Act-level summary; this file is the roadmap of record.
 
 Failures are deliberately varied in root cause: application bug, Kubernetes/config error,
 database/dependency failure, or the monitored target genuinely being down.
