@@ -79,11 +79,13 @@ See ADR-0012.
   question — and does **not** volunteer the diagnosis. This is the Beat 4.4 model applied
   throughout, and it holds whenever the learner is mid-diagnosis.
 - **Every beat ends with a Checkpoint.** After the code is done and **before the PR
-  merges**, Claude asks the learner four to six pointed questions on what was built, why,
-  and what would break. The learner answers in chat, cold — no reading the diff first, no
-  help. Claude assesses each answer and names the gaps; weak answers are re-run.
+  merges**, Claude questions the learner on what was built, why, and what would break — one
+  question at a time, waiting for each answer before asking the next, ~4–6 in total. The
+  learner answers in chat, cold — no reading the diff first, no help. Claude then assesses:
+  for each item it shows the question, the learner's answer, and the verdict / correct
+  answer together, so nothing has to be scrolled to. Weak answers are re-run.
   **A weak checkpoint blocks the merge.** Claude records the exchange as a *Checkpoint*
-  section in the PR body (questions, a verdict per answer, gaps found and closed).
+  section in the PR body (each question with a one-line verdict, gaps found and closed).
   Gauntlet rules apply during it: Claude asks and assesses, it does not teach.
 
 ---

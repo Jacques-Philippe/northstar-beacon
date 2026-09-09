@@ -36,10 +36,15 @@ learner is mid-diagnosis, not only in Act 4.
 ### Code-level complications are replaced by a Checkpoint
 
 Every beat ends with a **Checkpoint**: after the code is done and **before the PR merges**,
-Claude questions the learner — four to six pointed questions on what was built, why it is
-shaped that way, and what would break. The learner answers in chat, cold: no reading the
-diff first, no help from Claude. Claude then assesses each answer honestly and names the
-gaps. Weak answers can be re-run after the learner reads up.
+Claude questions the learner on what was built, why it is shaped that way, and what would
+break. The learner answers in chat, cold: no reading the diff first, no help from Claude.
+Claude then assesses each answer honestly and names the gaps. Weak answers can be re-run
+after the learner reads up.
+
+The exchange is interactive: **one question at a time**, Claude waiting for each answer
+before asking the next, roughly four to six in total — never the whole list up front. When
+Claude reports the assessment it **pairs each question with the learner's answer and the
+verdict**, shown together, so the learner never has to scroll back to see what was asked.
 
 - **A weak checkpoint blocks the merge.** The PR does not squash-merge until the checkpoint
   is passed. This is the one place the project gates on understanding rather than on a

@@ -21,11 +21,16 @@ Because the code is written with an LLM, assessment is a live exchange, not a do
   (`kubectl` describe/logs/events, metric values) and never volunteer the diagnosis or fix
   until he has stated his own.
 - **Every beat ends with a Checkpoint** — after the code is done and *before the PR
-  merges*, question Jacques with 4–6 pointed questions on what was built, why, and what
-  would break. He answers in chat, cold. Assess each answer honestly, name the gaps, re-run
-  weak ones. Gauntlet rules apply: ask and assess, do not teach. **A weak checkpoint blocks
-  the merge.** Record the exchange as a `## Checkpoint` section in the PR body (questions, a
-  verdict per answer, gaps found and closed).
+  merges*, question Jacques on what was built, why, and what would break. He answers in
+  chat, cold. Gauntlet rules apply: ask and assess, do not teach. **A weak checkpoint
+  blocks the merge.**
+  - **Ask one question at a time.** Wait for the answer, then ask the next. Never post the
+    whole list up front. Plan for ~4–6 questions.
+  - **When reporting the assessment and the answers, pair them.** For each item show the
+    question, then his answer, then your verdict / the correct answer — in that order,
+    together — so nothing has to be scrolled to.
+  - Record the exchange as a `## Checkpoint` section in the PR body (each question with a
+    one-line verdict, gaps found and closed, overall pass/fail).
 
 See `docs/narrative.md` → *How complications and assessment work* and each beat's
 **Checkpoint** field.
