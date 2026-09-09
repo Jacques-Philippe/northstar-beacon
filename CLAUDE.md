@@ -60,7 +60,10 @@ The pipeline is built incrementally but its completion is not negotiable.
 - Three kind clusters — `beacon-dev`, `beacon-staging`, `beacon-prod` — provisioned via the
   `Makefile` and `kind/<env>.yaml`
 - Manifests: `k8s/base/` + `k8s/overlays/{dev,staging,prod}/` (kustomize)
-- One image, two entrypoints: the container command selects `api` or `checker`
+- One backend image, two entrypoints: the container command selects `api` or `checker`
+- A separate `frontend` image (Vue 3 / Vite, multi-stage build, nginx-served); the browser
+  reaches `api` and the frontend through one `Ingress` (ingress-nginx), not port-forward
+  (ADR-0011). Introduced in Act 2, Beats 2.2–2.3.
 
 ## Conventions
 
