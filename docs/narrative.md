@@ -55,8 +55,8 @@ See `CLAUDE.md`.
 - **Complication** — a realistic *operational* problem: correct build, system still
   misbehaves. Not revealed all at once; the learner investigates. Only beats with such a
   problem carry this field.
-- **Checkpoint** — what the learner is questioned on before the PR merges. See the note
-  below.
+- **Checkpoint** — what the learner is questioned on before the PR merges. Every beat
+  carries one, whether or not it has a live Complication. See the note below.
 - **Lesson** — the intended takeaway.
 - **Roadmap ref** — this beat's number in the overall arc (1–22). `README.md` carries only
   an Act-level summary; this file is the roadmap of record.
@@ -104,6 +104,12 @@ See ADR-0012.
   `/health/ready` stubs (both return 200 for now). Structured JSON logging from the start.
   pytest suite.
 - **Complication.** None — this beat establishes the baseline. Keep it small.
+- **Checkpoint.** No live complication this beat. Questioning covers: why storage sits
+  behind a narrow protocol and what `InMemoryStorage` buys now versus costs later; how
+  "current status" is *derived* from the latest check rather than stored on the monitor;
+  liveness vs. readiness and why both are 200 stubs at this stage; why the checker runs
+  in-process inside the API for now and what that choice will later force; what structured
+  JSON logging gives you that ad-hoc prints do not.
 - **Lesson.** Shape of the app; what liveness vs. readiness will come to mean; why the
   storage seam exists.
 - **Roadmap ref.** 1.
@@ -139,6 +145,13 @@ See ADR-0012.
 - **Complication.** The first deploy does not work: `ImagePullBackOff` because the image was
   never loaded into kind, or a `containerPort` / Service `targetPort` mismatch so
   port-forward connects to nothing.
+- **Checkpoint.** Questioning covers: Deployment vs. ReplicaSet vs. Pod and which object you
+  actually edit; what a Service is and how it selects its Pods (labels), plus what
+  `port-forward` does that a ClusterIP does not; why `ImagePullBackOff` happens in kind and
+  how `kind load docker-image` differs from a registry pull; `containerPort` vs. Service
+  `port` / `targetPort` vs. the port the process listens on, and which mismatch produces
+  which symptom; what `kubectl describe` and events tell you that `get` does not; what
+  "desired state → controller → actual state" means concretely for this deploy.
 - **Lesson.** Desired state → controllers → actual state. Pod / ReplicaSet / Deployment /
   Service and how they relate. How an image gets to a node in kind.
 - **Roadmap ref.** 3.
@@ -150,6 +163,11 @@ See ADR-0012.
   update the manifest's image reference, `kubectl apply`, watch `kubectl rollout status`.
 - **Complication.** If the learner reuses a tag or edits in place: the rollout does nothing
   visible / Pods don't restart. Surfaces why immutable tags matter.
+- **Checkpoint.** Questioning covers: what actually changes in the cluster when you apply a
+  new image tag — the ReplicaSet swap the Deployment controller performs; why reusing a tag
+  or `latest` makes the rollout a no-op and rollback impossible; what `kubectl rollout
+  status` is waiting on; `maxSurge` / `maxUnavailable` at a high level; how you would revert
+  this specific change and why that is just another forward apply.
 - **Lesson.** The full loop, internalised. Why `latest` breaks both rollout and rollback.
   A rollout is a controlled ReplicaSet swap.
 - **Roadmap ref.** 4.
@@ -168,6 +186,11 @@ See ADR-0012.
   closes on recovery), `/monitors/{id}/uptime`, `/incidents`, `/status`. Ship through the
   loop.
 - **Complication.** None yet — the trap is set in 2.4.
+- **Checkpoint.** Questioning covers: why uptime is derived from incidents rather than
+  scanning every `CheckResult`; what makes `CheckResult` append-only and why that matters;
+  the incident state machine (opens after N consecutive failures, closes on recovery) and
+  its edge cases — a flap, a failure at the boundary, a monitor disabled mid-incident; what
+  `/status` aggregates and from where.
 - **Lesson.** Deriving uptime from incidents rather than scanning every result.
 - **Roadmap ref.** 5.
 
@@ -187,6 +210,12 @@ See ADR-0012.
   port and every call fails. Page and API are now different origins, so the browser blocks
   responses until CORS headers are added to `api` — configuration that exists only to prop
   up the port-forward workaround. Forwards die silently when a Pod restarts mid-demo.
+- **Checkpoint.** Questioning covers: why the frontend is its own image, Deployment, and
+  Service rather than served from `api` (ADR-0011); what the multi-stage build buys here —
+  the `node` toolchain does not ship in the `nginx` runtime image; why a browser cannot use
+  cluster DNS or Service names; same-origin vs. cross-origin and why CORS headers on `api`
+  became necessary the moment there were two origins; why the two-port-forward setup is
+  fragile and exactly what real infrastructure it is standing in for.
 - **Lesson.** A browser is a client that lives outside the cluster and cannot resolve
   cluster DNS. Same-origin vs. cross-origin. A frontend Pod is easy; wiring a browser to
   reach two Services is not. Multi-stage image builds: the build toolchain does not ship in
@@ -208,6 +237,13 @@ See ADR-0012.
 - **Complication.** kind routes nothing until the `extraPortMappings` and the controller
   line up. A path-rewrite mistake so `beacon.dev.local/api/monitors` reaches `api` as
   `/api/monitors` (404) instead of `/monitors`. A 404 that is the Ingress, not the app.
+- **Checkpoint.** Questioning covers: Pod → Service → Ingress and what each layer routes on
+  (L4 address/port vs. L7 host/path); the difference between an `Ingress` object (inert
+  rules) and an Ingress controller (proxy Pods that read them); how kind gets outside
+  traffic to the controller at all (`extraPortMappings`); what the `/api` prefix strip does
+  and how a rewrite mistake yields a 404; how to tell an Ingress 404 from an app 404; why
+  collapsing to one origin *removes* the CORS / `VITE_API_URL` problems rather than working
+  around them.
 - **Lesson.** Pod → Service (stable internal address) → Ingress (HTTP routing from outside
   to Services). An Ingress object is inert rules; an Ingress controller is just Pods running
   a reverse proxy. Collapsing two entry points to one origin removes a class of problems
@@ -221,6 +257,11 @@ See ADR-0012.
 - **Build.** Nothing new to build — this beat is investigation and a decision. The learner
   should conclude that in-memory state cannot live in a Pod.
 - **Complication.** Every rollout and every rescheduled Pod wipes all history.
+- **Checkpoint.** Questioning covers: where the "lost" history actually lived and why every
+  rollout and reschedule wipes it; "cattle, not pets" and Pod disposability as a design
+  choice, not a bug; why this forces an external database rather than a bigger Pod, node
+  affinity, or a local volume; what would and would not survive each of — `kubectl delete
+  pod`, a Deployment image bump, a node reboot.
 - **Lesson.** Pods are disposable by design; application instances are cattle. State that
   must survive a Pod cannot live inside one. This is the forcing function for a database.
 - **Roadmap ref.** 8.
@@ -236,6 +277,12 @@ See ADR-0012.
 - **Complication.** "Works in Compose, fails in kind": the DB host is still `localhost`
   instead of the Postgres `Service` name; or the app starts before Postgres accepts
   connections and crashes once.
+- **Checkpoint.** Questioning covers: how the `Storage` protocol lets `PostgresStorage` drop
+  in without touching call sites; why "works in Compose, fails in kind" — `localhost` vs. a
+  Service name and how cluster DNS resolves it; what happens when the app starts before
+  Postgres is ready and why a single crash-and-restart is acceptable here; why the
+  `emptyDir` volume is *deliberately* not durable and what it sets up for Act 3; the
+  sync-SQLAlchemy-in-a-threadpool tradeoff (ADR-0009).
 - **Lesson.** Cluster DNS and Service names. The app now has a dependency it doesn't
   control the lifecycle of. Swapping a `Storage` implementation without touching call sites.
 - **Roadmap ref.** 9.
@@ -251,6 +298,12 @@ See ADR-0012.
   comes with the second environment in Beat 4.2.
 - **Complication.** A wrong value in the ConfigMap (DB host typo) → `CrashLoopBackOff`.
   Diagnose from `kubectl describe`, logs, and the restart count / backoff.
+- **Checkpoint.** Questioning covers: ConfigMap vs. Secret — what each is for and what is
+  actually "secret" about a Secret (base64 is not encryption); how each reaches the Pod (env
+  vs. mounted volume) and which changes are redeployable without a new image; why a bad
+  config value presents identically to a bad app until you read the logs; how
+  `CrashLoopBackOff` and the growing restart backoff show up in `kubectl describe`; why the
+  Secret is created out-of-band and never committed, and what sealed-secrets would change.
 - **Lesson.** Config is separate from the image and separately deployable. A bad config
   presents identically to a bad app until you read the error.
 - **Roadmap ref.** 10.
@@ -265,6 +318,12 @@ See ADR-0012.
 - **Complication.** A migration that succeeds against an empty dev database behaves badly
   against realistic data: adds a `NOT NULL` column with no default, or takes a lock that
   blocks writes.
+- **Checkpoint.** Questioning covers: why migrations run as a `Job` (or init container)
+  ordered *before* the new Pods roll; forward/backward compatibility during a rolling update
+  — old and new code coexisting for a window, and what schema changes that forbids (a bare
+  `NOT NULL` add, a column rename); what locks a migration can take against real data that
+  an empty dev DB hides; the baseline-migration concept; what happens to the rollout if the
+  migration Job fails.
 - **Lesson.** Migrations are code that runs against real data. Forward/backward
   compatibility during a rolling update (old and new code briefly coexist). Ordering of
   "migrate" vs. "new pods".
@@ -287,6 +346,12 @@ See ADR-0012.
      on startup, readiness flaps.
   2. A liveness probe with too short a `timeoutSeconds` under load → container killed and
      restarted in a loop.
+- **Checkpoint.** Questioning covers: readiness gates traffic, liveness gates restarts —
+  what breaks if you swap them; why a readiness probe that checks a flaky dependency causes
+  flapping and dropped traffic; why too-short a liveness `timeoutSeconds` under load causes
+  a restart loop; what Kubernetes does when the new Pods never go Ready during a rollout (it
+  does **not** roll back — the old ReplicaSet stays and the rollout stalls); the roles of
+  `initialDelaySeconds` / `periodSeconds` / `failureThreshold`.
 - **Lesson.** Readiness gates traffic; liveness gates restarts; they are not
   interchangeable. Kubernetes does **not** roll back a Deployment just because the new Pods
   never become Ready — the old ReplicaSet stays up and the rollout simply stalls.
@@ -301,6 +366,11 @@ See ADR-0012.
 - **Complication.** A memory `limit` set too low → `OOMKilled`, visible in
   `kubectl describe` as the last state. Or `requests` set so high the Pod stays `Pending`
   with `FailedScheduling`.
+- **Checkpoint.** Questioning covers: requests drive scheduling, limits are enforced hard —
+  what each one actually does; what `OOMKilled` looks like in `kubectl describe` (last
+  state) and what triggers it; what `Pending` / `FailedScheduling` means and how oversized
+  requests produce it; CPU-limit throttling vs. memory-limit killing; how requests and
+  limits map to QoS class and eviction order.
 - **Lesson.** Requests drive scheduling; limits are enforced hard. What "the scheduler
   couldn't place this Pod" looks like.
 - **Roadmap ref.** 13.
@@ -314,6 +384,12 @@ See ADR-0012.
   (1 replica) and remove the loop from `api`.
 - **Complication.** A monitored team messages: "Beacon is hitting our health endpoint every
   10 seconds, we configured 30."
+- **Checkpoint.** Questioning covers: why `api` scales safely to 3 replicas but an
+  in-process checker does not — N copies means every target probed N×; why a background
+  worker is not stateless-by-nature the way a request handler is; the case for a separate
+  `checker` Deployment with its own replica count; what a Service load-balances across and
+  what keeps the `api` replicas interchangeable; what still breaks with a single checker
+  (the setup for 3.6).
 - **Lesson.** Stateless replicas behind a Service are easy. A background worker is not
   stateless-by-nature — running N copies changes behaviour. Separating workloads that scale
   differently.
@@ -330,6 +406,11 @@ See ADR-0012.
   that a real shop would use a managed service.
 - **Complication.** None — this is a judgement beat. The *outcome* is constrained; the
   *reasoning* is the exercise, and it is exactly the kind of tradeoff an interviewer probes.
+- **Checkpoint.** Questioning covers: the managed-vs-self-hosted Postgres axes — backups,
+  failover, version upgrades, on-call expertise, blast radius, cost; why the project lands
+  on in-cluster (the zero-spend constraint, ADR-0003) and why that is a *constraint-driven*
+  decision, not the engineering-preferred one; what a real shop would do here; how the
+  learner would defend this tradeoff to an interviewer without hand-waving.
 - **Lesson.** Not every workload belongs in Kubernetes. Recognising when a constraint (not
   an engineering preference) is driving an architecture decision.
 - **Roadmap ref.** 15.
@@ -343,6 +424,11 @@ See ADR-0012.
 - **Complication.** Data survives `kubectl delete pod` but not `kubectl delete pvc`;
   scaling the StatefulSet down leaves the PVC behind; the Pod comes back with a stable name
   and re-attaches its volume.
+- **Checkpoint.** Questioning covers: what a StatefulSet gives you that a Deployment does
+  not — stable identity, ordered rollout, per-Pod storage via `volumeClaimTemplate`; what it
+  still does **not** give you (replication, failover, backups); why a PVC outlives a Pod
+  delete and even a scale-down; the role of the headless Service; Pod lifecycle vs. storage
+  lifecycle as deliberately separate, sticky things.
 - **Lesson.** Pod lifecycle and storage lifecycle are separate, and storage is
   deliberately sticky. What a StatefulSet gives you (stable identity, ordered rollout,
   per-Pod storage) and what it does **not** (replication, failover, backups).
@@ -356,6 +442,11 @@ See ADR-0012.
   (`SELECT ... FOR UPDATE SKIP LOCKED`) so each due check is taken by exactly one replica.
 - **Complication.** Before the claim query: double-probing returns, now from multiple
   checker Pods; a monitored team complains again.
+- **Checkpoint.** Questioning covers: why "just add replicas" is safe for `api` but not
+  `checker`; how `SELECT ... FOR UPDATE SKIP LOCKED` makes each due check the property of
+  exactly one replica; the alternatives — leader election, a real queue — and their
+  tradeoffs; what double-probing looks like from the monitored team's side; what happens to
+  a claimed check if that checker Pod dies mid-probe.
 - **Lesson.** Horizontally scaling a worker needs an explicit coordination mechanism.
   DB-level locking vs. leader election vs. a real queue — the tradeoffs, and why "just add
   replicas" is safe for `api` but not for `checker`.
@@ -371,6 +462,12 @@ See ADR-0012.
   the exercise.
 - **Complication.** None required; optionally, a metric that lies (a counter reset on every
   scrape because it's per-request state).
+- **Checkpoint.** Questioning covers: logs (events) vs. metrics (aggregates) and when you
+  reach for each; what to instrument to catch "the checker is falling behind" before a team
+  tells you — throughput, probe latency, queue depth / lag; why a counter that resets each
+  scrape lies, and how Prometheus expects counters to behave (monotonic, read via `rate()`);
+  why the `/metrics` endpoint plus a documented port-forward is enough without deploying
+  Prometheus or Grafana.
 - **Lesson.** Instrumentation as a first-class concern; the difference between logs (events)
   and metrics (aggregates); why you don't need the whole observability stack to get value.
 - **Roadmap ref.** 18.
@@ -388,6 +485,11 @@ See ADR-0012.
   short SHA, push to GHCR, and auto-deploy to **`beacon-dev`**.
 - **Complication.** A pipeline that pushes `:latest` and a Deployment whose image reference
   never changes → "CI is green, why didn't my change deploy?"
+- **Checkpoint.** Questioning covers: the full chain source → build → image → registry →
+  Deployment update → rollout → Pods, named at each hop; why the `test` check is required by
+  `protect-master` and what that buys; why a pipeline that pushes `:latest` against a fixed
+  image reference produces "CI green, nothing deployed"; what makes an immutable SHA tag
+  auditable and reversible; what "auto-deploy to `beacon-dev`" actually does to the cluster.
 - **Lesson.** The pipeline as: source → build artifact → image → registry → Deployment
   update → rollout → Pods. Immutable tags are what make that chain auditable and
   reversible.
@@ -420,6 +522,13 @@ See ADR-0012.
   `config.js`) populated from a per-env `ConfigMap` at container start, and the app reads it
   on boot. The relative `/api` base URL from Beat 2.3 still needs no config; genuinely
   per-env values (labels, feature flags, external links) go through `/config.json`.
+- **Checkpoint.** Questioning covers: build once / promote the artifact — why rebuilding per
+  environment is wrong (ADR-0007); kustomize `base` vs. overlays, and what legitimately
+  varies per env vs. what must be byte-identical; the danger of the ambient `kubectl`
+  context; why a Secret created only in the dev cluster breaks staging; why build-time
+  `vite` config cannot differ per env once the image is promoted, and how a runtime
+  `/config.json` from a per-env ConfigMap fixes it; why the relative `/api` URL needs no
+  config; why the `Monitor` target lists are DB data, not overlay config.
 - **Lesson.** Build once, promote the artifact. `kubectl` contexts and the danger of the
   ambient one. What legitimately differs between environments vs. what must be identical.
   For a static SPA, build-time config breaks promotion — per-env config has to arrive at
@@ -434,6 +543,12 @@ See ADR-0012.
 - **Complication.** v1.2 promotes a bad config value to prod → rolling update, some Pods
   come up broken, `/status` fails for a fraction of traffic → roll back by re-pointing the
   prod overlay at the previous tag.
+- **Checkpoint.** Questioning covers: rolling update mechanics — `maxSurge` /
+  `maxUnavailable` and what a partial failure mid-rollout looks like to a user; why
+  Kubernetes does not auto-roll-back a bad config; rollback as re-pointing the overlay at a
+  known-good SHA, not a rebuild; what state the database is left in after a partial rollout
+  and why that is the harder question; how promotion staging → prod flows through
+  `workflow_dispatch`.
 - **Lesson.** Rolling update mechanics (`maxSurge` / `maxUnavailable`); partial failure
   mid-rollout; Kubernetes does not auto-roll-back; rollback is promoting a known-good
   artifact, not a rebuild; what state the database is left in.
@@ -452,6 +567,12 @@ across categories.
 | **v2.2** | `api` returns 503, `checker` in `CrashLoopBackOff` | Postgres PVC full / Pod evicted | A dependency is down. Beacon is behaving correctly. |
 | **v2.3** | Behaviour differs between Pods for the "same" version | A stale ReplicaSet still serving / a node with an old cached image | Not every Pod is running what you think it is. |
 
+- **Checkpoint.** This beat *is* the checkpoint model at full strength: for each incident the
+  learner states a diagnosis before the cause is confirmed, under gauntlet rules, and the
+  "Correct diagnosis" column is the assessment key. Questioning also covers how the learner
+  told the categories apart — application bug vs. probe/config error vs. dependency down vs.
+  wrong-version-running — from `kubectl` evidence alone, and what single command would have
+  disambiguated fastest in each case.
 - **Roadmap ref.** 22.
 
 ---
