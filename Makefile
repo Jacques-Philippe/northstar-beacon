@@ -24,7 +24,7 @@ run-api: image
 run-checker: image
 	docker run --rm $(TAG) checker
 
-# ---- kind / dev cluster (Beat 1.3) -------------------------------------------------
+# ---- kind / dev cluster -------------------------------------------------
 
 ## Create the beacon-dev kind cluster (needs `kind` on PATH: brew install kind).
 dev-up:
