@@ -201,11 +201,34 @@ docker run --rm beacon:<short-sha> checker
 The build is multi-stage: `uv` resolves the virtualenv in the build stage; the runtime
 stage carries only Python and the venv, and runs as a non-root user.
 
+## Deploying to kind (dev)
+
+Beat 1.3: the image runs on a local **kind** cluster, `beacon-dev`. One `Deployment`
+(1 replica, checker still in-process) and a `ClusterIP` `Service`; the API is reached with
+`kubectl port-forward` (an Ingress replaces that in Beat 2.3). Manifests are kustomize:
+`k8s/base/` + `k8s/overlays/dev/`, the overlay pinning the immutable git-SHA image tag.
+
+Needs `kind` on your PATH (`brew install kind`); `kubectl` provides the kustomize build.
+
+```
+make dev-up                                        # create the beacon-dev cluster
+make deploy-dev                                     # build, load into kind, apply the dev overlay, wait for rollout
+make dev-status                                     # get deploy / rs / pod / svc for the app
+
+kubectl --context kind-beacon-dev port-forward svc/beacon-api 8000:80
+curl localhost:8000/health/live
+
+make dev-down                                       # tear the cluster down
+```
+
+kind has no registry access, so the image is side-loaded with `kind load docker-image`
+(`make kind-load`, run for you by `deploy-dev`) rather than pulled.
+
 ## Status
 
-Beat 1.2 in progress: the Beat 1.1 service, now containerised — a multi-stage `Dockerfile`,
-`.dockerignore`, and a `python -m beacon <api|checker>` entrypoint behind a single image.
-Runs under Docker locally; not yet on Kubernetes.
+Beat 1.3 in progress: the containerised service now deploys to the `beacon-dev` kind
+cluster — `kind/dev.yaml`, kustomize manifests under `k8s/`, and `Makefile` targets for
+provisioning, image side-load, and rollout. Reached via `kubectl port-forward`.
 
 ## Repository layout (planned)
 
