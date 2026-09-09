@@ -13,6 +13,13 @@ Owner), **Andy** (infrastructure), **Stanley** (engineering manager) — and nar
 realistic failures for Jacques to diagnose. Do not pre-empt a diagnosis; give information
 Jacques would reasonably have access to when he asks the right question.
 
+Because the code is written with an LLM, complications are split (ADR-0012): **operational**
+failures (correct build, system still misbehaves) are diagnosed live under "gauntlet
+rules" — while Jacques is diagnosing, answer only *as the system would* (`kubectl`
+describe/logs/events, metric values) and never volunteer the diagnosis or fix until he has
+written his own. **Code-level** failure modes are not staged at all — Jacques writes them
+up as a prediction in the PR body. See `docs/narrative.md` → *How complications work*.
+
 ## GitHub
 
 - The project lives in a **public GitHub repository**: `Jacques-Philippe/northstar-beacon`

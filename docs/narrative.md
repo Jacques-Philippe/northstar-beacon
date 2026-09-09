@@ -54,12 +54,35 @@ See `CLAUDE.md`.
 - **Build** — what the learner is expected to implement.
 - **Complication** — the realistic problem introduced. Not revealed all at once; the learner
   investigates.
+- **Failure modes** — where a beat has no live complication: the things that *would* break,
+  written up by the learner in the PR body as a prediction (what breaks, why, the signal
+  you'd see), not discovered by accident. See the note below.
 - **Lesson** — the intended takeaway.
 - **Roadmap ref** — this beat's number in the overall arc (1–22). `README.md` carries only
   an Act-level summary; this file is the roadmap of record.
 
 Failures are deliberately varied in root cause: application bug, Kubernetes/config error,
 database/dependency failure, or the monitored target genuinely being down.
+
+### How complications work when the code is written with an LLM
+
+The learner pair-programs with an LLM, so "you wrote a subtle bug, now debug it" does not
+happen by accident — the code arrives correct. Complications are therefore split (ADR-0012):
+
+- **Operational complications** — the build is correct and the system still misbehaves
+  because of how the pieces fit together (image never loaded into kind, a Service
+  `targetPort` mismatch, a stale ReplicaSet, the wrong `kubectl` context). These stay, and
+  are diagnosed **live under gauntlet rules**: when the learner is diagnosing, Claude
+  answers only *as the system would* — it provides logs, `kubectl describe`, events, metric
+  values when asked the right question, and does **not** volunteer the diagnosis. This is
+  the Beat 4.4 model applied throughout.
+- **Code-level complications** — a bug that would have lived in the application or a
+  config file. These are replaced by a **Failure modes** write-up in the PR body: the
+  learner states what would break, why, and how they'd catch it. Prediction, not post-hoc
+  discovery.
+
+A beat's **Complication** field is kept only where it is operational. Where the original
+script had a code-level complication, it becomes **Failure modes**.
 
 ---
 
@@ -84,14 +107,21 @@ database/dependency failure, or the monitored target genuinely being down.
 ### Beat 1.2 — Containerise
 
 - **Trigger.** Andy: "If you want this anywhere near the cluster it needs to be an image."
-- **Build.** `Dockerfile` (Python 3.12, `uv` for dependency install from `pyproject.toml`),
-  `.dockerignore`; a tag scheme based on the git short SHA (no `latest`). One image, two
-  entrypoints — the container command selects `api` or `checker`. Build and run locally;
-  confirm the API answers on the published port.
-- **Complication.** One realistic Docker gotcha: wrong port exposed, a dev-only dependency
-  missing from the image, or the app binding to `127.0.0.1` instead of `0.0.0.0`.
-- **Lesson.** Source vs. build artifact vs. image vs. container. Build context. Why the
-  container environment differs from the laptop.
+- **Build.** Multi-stage `Dockerfile` (`uv` resolves the venv in a build stage; a slim,
+  non-root runtime stage carries only Python and the venv), `.dockerignore`, and a
+  `python -m beacon <api|checker>` entrypoint so one image serves both processes — the
+  container command selects. `Makefile` targets tag the image with the git short SHA
+  (no `latest`). Build and run both entrypoints under Docker; confirm the API answers on
+  the published port and the checker starts its loop.
+- **Failure modes** (write-up in the PR — this beat has no live complication): why the app
+  must bind `0.0.0.0` and not `127.0.0.1` (a loopback bind is unreachable through the
+  published port); what a runtime dependency left in the dev group looks like at
+  `docker run` time versus at build time; `containerPort` / published-port / app-listen
+  mismatch; why the build context matters (`.dockerignore`, and copying `pyproject.toml` /
+  `uv.lock` before the source so the dependency layer caches).
+- **Lesson.** Source vs. build artifact vs. image vs. container. Build context and layer
+  caching. Why the container environment differs from the laptop. Multi-stage builds: the
+  build toolchain does not ship in the runtime image.
 - **Roadmap ref.** 2.
 
 ### Beat 1.3 — Deploy to kind
