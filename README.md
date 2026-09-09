@@ -18,7 +18,7 @@ calls that fail for real, and it naturally wants to be more than one running com
 This is a **simulation of working on a real project over time**, not a tutorial or a fixed
 spec. The developer is real (the learner). The rest of the project is roleplayed:
 
-- **Marta** — Product Owner. Delivers requirements and priorities.
+- **Michael** — Product Owner. Delivers requirements and priorities.
 - Engineering manager, an infrastructure engineer, other developers, and users reporting
   problems, as the story needs them.
 
@@ -26,13 +26,35 @@ The requirements are **deliberately not settled up front**. Over the course of t
 the stakeholder will:
 
 - introduce feature-changing requirements, sometimes after the relevant thing is already built
-- give requirements that are ambiguous and need clarification
 - change their mind, and re-prioritise
 
-The domain model, API surface, and roadmap below are the **current** picture. They are
+The domain model and API surface below are the **current** picture. They are
 expected to move as feedback lands, and history (what changed, why, and what it cost) is
-recorded in `docs/`. The learning is as much in absorbing changing requirements and
-diagnosing the failures that follow as in the Kubernetes mechanics themselves.
+recorded in `docs/`. The full planned arc lives in `docs/narrative.md`. The learning is as
+much in absorbing changing requirements and diagnosing the failures that follow as in the
+Kubernetes mechanics themselves.
+
+## Working practices
+
+The project is run the way a real one would be:
+
+- It lives in a **public GitHub repository**.
+- Every requirement, feature, and reported failure is tracked as a **GitHub issue**, opened
+  before implementation starts.
+- Changes land through **pull requests** — one per issue — that close the issue they
+  address. No direct commits to the default branch.
+- A **full GitHub Actions CI/CD pipeline is a committed deliverable**: tests on every PR,
+  image build tagged with the immutable git SHA, push to a container registry (GHCR),
+  manifest update, rollout to the cluster, and a working rollback path. It is built up over
+  the roadmap but its completion is not optional.
+- There are **three environments** — `dev`, `staging`, `prod` — each its own local **kind**
+  cluster, configured with kustomize overlays. Everything runs locally: **zero cloud spend**
+  (ADR-0003).
+- Settled design decisions are recorded in **`docs/adr/`**; domain vocabulary in
+  **`CONTEXT.md`**.
+
+See `CLAUDE.md` for the conventions in detail, and `docs/adr/` for the reasoning behind the
+architecture.
 
 ## Learning objectives
 
@@ -50,7 +72,7 @@ Mental model to keep returning to: **desired state → controllers → actual st
 
 | Entity | Description | Key fields |
 |--------|-------------|------------|
-| **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `owning_team`, `created_at` |
+| **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `created_at` |
 | **CheckResult** | The outcome of one probe. Append-only, high-volume. | `id`, `monitor_id`, `checked_at`, `ok`, `status_code`, `response_ms`, `error` |
 | **Incident** | Opens after N consecutive failing checks, closes on recovery. | `id`, `monitor_id`, `started_at`, `resolved_at`, `cause` (last error) |
 
@@ -83,73 +105,102 @@ concrete reason the database chapters matter.
 
 ## Components
 
-Beacon is two logical components whose separation is introduced *when the architecture
-demands it*, not up front:
+Beacon is two logical components:
 
 - **api** — the FastAPI service above.
 - **checker** — a loop that finds monitors whose next check is due, probes them, writes
   `CheckResult`s, and opens/closes `Incident`s.
 
-Progression:
-
-1. The checker runs as a background task **inside the api process**. One process, in-memory
-   data. Simple.
-2. We want multiple `api` replicas for availability — but now every target gets probed once
-   per replica. So the checker is split into **its own Deployment**.
-3. Two processes now need **shared state** → this is what forces PostgreSQL, not a decree.
-4. Later, running multiple `checker` replicas causes double-probing → a real
-   stateful-coordination problem (`SELECT … FOR UPDATE SKIP LOCKED` / leader election),
-   which is a more honest lesson than wrapping Postgres in a StatefulSet.
+They start fused: the checker runs as a background task **inside the api process**, on
+in-memory data — that is what gets containerised and deployed to kind first. How and when
+they come apart — the checker into its own Deployment, then multiple checker replicas with a
+real stateful-coordination problem (`SELECT … FOR UPDATE SKIP LOCKED` / leader election) —
+is driven by specific beats in `docs/narrative.md`, not decided up front.
 
 ## Target architecture (built up gradually, not all at once)
 
-- Python / FastAPI application, plus the checker worker
-- PostgreSQL for persistent data
-- Docker images with immutable tags (no reliance on `latest`)
-- Docker Compose for local development
-- Kubernetes for orchestration, with a local **kind** cluster
+- Python 3.12 / FastAPI application, plus the checker worker; `uv` + `pyproject.toml`
+- One container image, two entrypoints (`api` / `checker`); immutable git-SHA tags
+- PostgreSQL for persistent data, via a `Storage` interface (SQLAlchemy 2.0 ORM + Alembic)
+- Docker Compose for the local dev database
+- Kubernetes for orchestration: three local **kind** clusters (`dev` / `staging` / `prod`)
 - Kubernetes objects introduced as they become relevant:
   Deployments, Services, ConfigMaps, Secrets, readiness/liveness probes,
-  resource requests/limits, PVCs, and StatefulSets if the story calls for it
-- GitHub Actions for CI/CD: tests → image build → push to registry → rollout → health checks → rollback
-- A container registry for build artifacts
+  resource requests/limits, PVCs, StatefulSets, Jobs
+- kustomize `base/` + `overlays/{dev,staging,prod}/` for per-environment config
+- GitHub Actions for CI/CD: tests → image build → push to GHCR → deploy to dev → gated
+  promotion to staging and prod → rollback
+- Prometheus `/metrics` endpoint (no Prometheus/Grafana deployment)
 
-## Roadmap
+## The arc
 
-1. FastAPI service, in-memory data, tests — Monitors + CheckResults, checker as an in-process background task
-2. Incidents and the `/status` and `/uptime` endpoints
-3. Containerize the api (Dockerfile)
-4. Introduce PostgreSQL; Docker Compose for local dev; split the checker into its own process
-5. Database migrations (Alembic)
-6. Deploy to Kubernetes (kind): Deployments + Service for api and checker
-7. Configuration via ConfigMaps and Secrets
-8. Readiness/liveness probes and resource requests/limits
-9. Persistent storage: decide whether PostgreSQL runs in-cluster or as a managed service
-10. StatefulSets / PVCs if they earn their place
-11. Multiple checker replicas and the double-probe coordination problem
-12. CI/CD pipeline in GitHub Actions
-13. Rolling deployments, then a deliberate rollback
-14. Deliberate failures to diagnose (broken config, app bug causing 500s, broken readiness probe, DB unavailable)
+The organising idea is **into the cluster fast**: a deliberately trivial version is running
+on kind by Beat 1.3, and everything after that is layered onto an app that is already
+deployed. Acts 1–3 run against a single `beacon-dev` cluster; the other two environments and
+the promotion pipeline arrive in Act 4.
+
+- **Act 1 — Into the cluster.** Minimal service → containerise → deploy to kind → make the
+  deploy loop routine.
+- **Act 2 — State forces the architecture.** Add history → feel Pod ephemerality → introduce
+  PostgreSQL → move config out of the image → database migrations.
+- **Act 3 — Running it properly.** Readiness vs. liveness → resource requests and limits →
+  scale the api and split out the checker → the managed-vs-in-cluster database decision →
+  StatefulSet + PVC → multiple checker replicas and coordination → a metrics endpoint.
+- **Act 4 — CI/CD, multiple environments, and the failure gauntlet.** Build the pipeline →
+  stand up staging and prod → ship a feature dev → staging → prod, then roll back → the
+  diagnosis gauntlet.
+
+`docs/narrative.md` is the **roadmap of record**: the full beat-by-beat script, with each
+beat's trigger, build, complication, and lesson; it is amended in place as beats are
+played. What actually happened is the git history, the merged PRs, and the closed issues.
 
 ## Tech stack
 
-Python, FastAPI, pytest, PostgreSQL, Docker, Docker Compose, kind, kubectl, Kubernetes YAML, GitHub Actions.
+Python 3.12, `uv`, FastAPI, pytest, SQLAlchemy 2.0 + Alembic, PostgreSQL, Docker, Docker
+Compose, kind, kubectl, kustomize, GitHub Actions, GHCR.
 
-Out of scope unless a concrete need arises: Redis, Kafka, microservices, cloud infrastructure, authentication.
+Out of scope unless a concrete need arises: Redis, Kafka, microservices, cloud
+infrastructure, authentication, Helm, a Prometheus/Grafana deployment, GitOps controllers.
+See `docs/narrative.md` → *Optional later beats* for topics deliberately deferred.
+
+## Running locally
+
+```
+uv sync
+uv run uvicorn beacon.api.app:app --reload      # API on :8000, checker runs in-process
+uv run pytest                                    # test suite
+uv run ruff check && uv run ruff format --check  # lint + format (the CI `test` check)
+```
+
+Configuration is read from `BEACON_`-prefixed environment variables (see `beacon/config.py`).
 
 ## Status
 
-Project scaffolding. No application code yet.
+Beat 1.1 in progress: minimal FastAPI service — `Monitor` CRUD, in-process checker,
+in-memory storage behind the `Storage` seam, `/health/*` stubs, JSON logging, pytest suite,
+and the CI `test` workflow. Not yet containerised or deployed.
 
 ## Repository layout (planned)
 
 ```
-app/                  FastAPI application code
-app/checker/          the checker worker
+beacon/               application package
+  api/                the FastAPI service
+  checker/            the checker worker
+  storage/            Storage protocol + in-memory and Postgres implementations
+  models.py           shared domain models
 tests/                pytest suite
+migrations/           Alembic migrations
+pyproject.toml
 Dockerfile
-docker-compose.yml
-k8s/                  Kubernetes manifests
+docker-compose.yml    local dev database
+Makefile              cluster provisioning + bootstrap
+kind/                 per-environment kind cluster configs
+k8s/
+  base/               shared Kubernetes manifests
+  overlays/           dev / staging / prod kustomize overlays
 .github/workflows/    CI/CD pipelines
-docs/                 design notes and decisions
+docs/
+  narrative.md        the beat-by-beat script
+  adr/                architecture decision records
+CONTEXT.md            domain glossary
 ```
