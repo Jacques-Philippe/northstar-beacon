@@ -18,7 +18,7 @@ calls that fail for real, and it naturally wants to be more than one running com
 This is a **simulation of working on a real project over time**, not a tutorial or a fixed
 spec. The developer is real (the learner). The rest of the project is roleplayed:
 
-- **Marta** — Product Owner. Delivers requirements and priorities.
+- **Michael** — Product Owner. Delivers requirements and priorities.
 - Engineering manager, an infrastructure engineer, other developers, and users reporting
   problems, as the story needs them.
 
@@ -26,13 +26,29 @@ The requirements are **deliberately not settled up front**. Over the course of t
 the stakeholder will:
 
 - introduce feature-changing requirements, sometimes after the relevant thing is already built
-- give requirements that are ambiguous and need clarification
 - change their mind, and re-prioritise
 
 The domain model, API surface, and roadmap below are the **current** picture. They are
 expected to move as feedback lands, and history (what changed, why, and what it cost) is
-recorded in `docs/`. The learning is as much in absorbing changing requirements and
-diagnosing the failures that follow as in the Kubernetes mechanics themselves.
+recorded in `docs/`. The full planned arc lives in `docs/narrative.md`. The learning is as
+much in absorbing changing requirements and diagnosing the failures that follow as in the
+Kubernetes mechanics themselves.
+
+## Working practices
+
+The project is run the way a real one would be:
+
+- It lives in a **public GitHub repository**.
+- Every requirement, feature, and reported failure is tracked as a **GitHub issue**, opened
+  before implementation starts.
+- Changes land through **pull requests** — one per issue — that close the issue they
+  address. No direct commits to the default branch.
+- A **full GitHub Actions CI/CD pipeline is a committed deliverable**: tests on every PR,
+  image build tagged with the immutable git SHA, push to a container registry (GHCR),
+  manifest update, rollout to the cluster, and a working rollback path. It is built up over
+  the roadmap but its completion is not optional.
+
+See `CLAUDE.md` for the conventions in detail.
 
 ## Learning objectives
 
@@ -83,7 +99,7 @@ concrete reason the database chapters matter.
 
 ## Components
 
-Beacon is two logical components whose separation is introduced *when the architecture
+Beacon is two logical components. They start fused and separate *when the architecture
 demands it*, not up front:
 
 - **api** — the FastAPI service above.
@@ -92,14 +108,16 @@ demands it*, not up front:
 
 Progression:
 
-1. The checker runs as a background task **inside the api process**. One process, in-memory
-   data. Simple.
-2. We want multiple `api` replicas for availability — but now every target gets probed once
-   per replica. So the checker is split into **its own Deployment**.
-3. Two processes now need **shared state** → this is what forces PostgreSQL, not a decree.
-4. Later, running multiple `checker` replicas causes double-probing → a real
-   stateful-coordination problem (`SELECT … FOR UPDATE SKIP LOCKED` / leader election),
-   which is a more honest lesson than wrapping Postgres in a StatefulSet.
+1. The checker runs as a background task **inside the api process** — one process,
+   in-memory data. This is what gets containerised and deployed to kind first.
+2. History (uptime, incidents) is added; a rollout or a rescheduled Pod wipes it, because
+   **Pods are ephemeral** → this forces PostgreSQL, for durability, not by decree.
+3. `api` is scaled to multiple replicas for availability — but now every target is probed
+   once per replica → the checker is split into **its own Deployment**.
+4. The single checker can't keep up → running multiple `checker` replicas causes
+   double-probing → a real stateful-coordination problem
+   (`SELECT … FOR UPDATE SKIP LOCKED` / leader election), a more honest lesson than
+   wrapping Postgres in a StatefulSet.
 
 ## Target architecture (built up gradually, not all at once)
 
@@ -116,20 +134,35 @@ Progression:
 
 ## Roadmap
 
-1. FastAPI service, in-memory data, tests — Monitors + CheckResults, checker as an in-process background task
-2. Incidents and the `/status` and `/uptime` endpoints
-3. Containerize the api (Dockerfile)
-4. Introduce PostgreSQL; Docker Compose for local dev; split the checker into its own process
-5. Database migrations (Alembic)
-6. Deploy to Kubernetes (kind): Deployments + Service for api and checker
-7. Configuration via ConfigMaps and Secrets
-8. Readiness/liveness probes and resource requests/limits
-9. Persistent storage: decide whether PostgreSQL runs in-cluster or as a managed service
-10. StatefulSets / PVCs if they earn their place
-11. Multiple checker replicas and the double-probe coordination problem
-12. CI/CD pipeline in GitHub Actions
-13. Rolling deployments, then a deliberate rollback
-14. Deliberate failures to diagnose (broken config, app bug causing 500s, broken readiness probe, DB unavailable)
+The organising idea is **into the cluster fast**: a deliberately trivial version is running
+on kind by step 3, and everything after that is layered onto an app that is already
+deployed. See `docs/narrative.md` for the beat-by-beat story.
+
+**Act 1 — Into the cluster**
+1. Minimal FastAPI service: Monitor CRUD, in-memory, in-process checker, `/health/*` stubs, tests
+2. Containerize it (Dockerfile, immutable git-SHA tags, no `latest`)
+3. Deploy to kind: Deployment + Service, the `kubectl get/describe/logs` loop
+4. Make the deploy loop routine: ship a small change end-to-end (edit → build → load → apply → rollout)
+
+**Act 2 — State forces the architecture**
+5. Add history: CheckResults, Incidents, `/uptime`, `/status`
+6. Feel Pod ephemerality: a rollout wipes in-memory history
+7. Introduce PostgreSQL (Compose for local dev; naive `emptyDir` Deployment in-cluster for now)
+8. Move config out of the image: ConfigMaps and Secrets
+9. Database migrations (Alembic), and how they run relative to a rollout
+
+**Act 3 — Running it properly**
+10. Readiness vs. liveness probes
+11. Resource requests and limits
+12. Scale the api; split the checker into its own Deployment
+13. Decision: should PostgreSQL run in-cluster or be managed?
+14. StatefulSet + PVC for PostgreSQL
+15. Multiple checker replicas and the double-probe coordination problem
+
+**Act 4 — CI/CD and the failure gauntlet**
+16. CI/CD pipeline in GitHub Actions (test → build → push to registry → rollout)
+17. Rolling deployment of a real feature, then a deliberate rollback
+18. The failure gauntlet: app bug (500s), broken readiness probe, DB unavailable, stale-replica skew
 
 ## Tech stack
 
