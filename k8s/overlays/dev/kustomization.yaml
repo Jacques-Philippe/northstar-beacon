@@ -9,4 +9,4 @@ resources:
 # line (and committing it) is what a deploy *is*. Never `latest`.
 images:
   - name: beacon
-    newTag: uncommitted
+    newTag: "3944498"

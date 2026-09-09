@@ -40,7 +40,7 @@ kind-load: image
 
 ## Point the dev overlay at the current SHA and apply it to beacon-dev.
 deploy-dev: kind-load
-	cd k8s/overlays/dev && sed -i.bak -E 's/^( *newTag: ).*/\1$(SHA)/' kustomization.yaml && rm kustomization.yaml.bak
+	cd k8s/overlays/dev && sed -i.bak -E 's/^( *newTag: ).*/\1"$(SHA)"/' kustomization.yaml && rm kustomization.yaml.bak
 	kubectl --context kind-$(KIND_CLUSTER) apply -k k8s/overlays/dev
 	kubectl --context kind-$(KIND_CLUSTER) rollout status deployment/beacon-api
 
