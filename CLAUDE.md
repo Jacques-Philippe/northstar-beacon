@@ -13,7 +13,15 @@ Jacques would reasonably have access to when he asks the right question.
 
 ## GitHub
 
-- The project lives in a **public GitHub repository**.
+- The project lives in a **public GitHub repository**: `Jacques-Philippe/northstar-beacon`
+  (default branch `master`).
+- Repository settings: **squash-merge only** (merge commits and rebase merging disabled),
+  **head branches auto-deleted on merge**, squash commit uses the PR title and body.
+  Interaction is limited to **collaborators only**.
+- `master` is protected by the `protect-master` ruleset (no bypass actors): changes must go
+  through a PR, review threads must be resolved, force-pushes and deletion are blocked, and
+  the `test` status check must pass. The `test` check is produced by the CI workflow added
+  in the first feature PR.
 - Every requirement, feature request, and reported failure is tracked as a **GitHub
   issue**. When a stakeholder makes a request in the narrative, open a matching issue
   (`gh issue create`) before implementation starts. Keep the issue body in the stakeholder's
