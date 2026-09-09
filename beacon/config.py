@@ -16,6 +16,11 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Where the api entrypoint binds. 0.0.0.0 so the port is reachable from outside the
+    # container (a 127.0.0.1 bind is the classic "works on my laptop, dead in Docker" bug).
+    host: str = "0.0.0.0"
+    port: int = 8000
+
     # How often the checker wakes to look for monitors whose next check is due.
     checker_tick_seconds: float = 1.0
 

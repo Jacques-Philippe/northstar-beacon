@@ -174,18 +174,38 @@ See `docs/narrative.md` → *Optional later beats* for topics deliberately defer
 
 ```
 uv sync
-uv run uvicorn beacon.api.app:app --reload      # API on :8000, checker runs in-process
-uv run pytest                                    # test suite
-uv run ruff check && uv run ruff format --check  # lint + format (the CI `test` check)
+uv run python -m beacon api                       # API on :8000, checker runs in-process
+uv run python -m beacon checker                   # the probe loop on its own
+uv run pytest                                     # test suite
+uv run ruff check && uv run ruff format --check   # lint + format (the CI `test` check)
 ```
+
+`python -m beacon <api|checker>` is the single entrypoint; the argument selects the
+process, and it is the same dispatch the container image uses.
 
 Configuration is read from `BEACON_`-prefixed environment variables (see `beacon/config.py`).
 
+## Container image
+
+One image, two entrypoints. Tags are the immutable git short SHA — never `latest`.
+
+```
+make image                                        # docker build -t beacon:<short-sha> .
+make run-api                                       # build, then run `api` on localhost:8000
+make run-checker                                    # build, then run `checker`
+
+docker run --rm -p 8000:8000 beacon:<short-sha> api
+docker run --rm beacon:<short-sha> checker
+```
+
+The build is multi-stage: `uv` resolves the virtualenv in the build stage; the runtime
+stage carries only Python and the venv, and runs as a non-root user.
+
 ## Status
 
-Beat 1.1 in progress: minimal FastAPI service — `Monitor` CRUD, in-process checker,
-in-memory storage behind the `Storage` seam, `/health/*` stubs, JSON logging, pytest suite,
-and the CI `test` workflow. Not yet containerised or deployed.
+Beat 1.2 in progress: the Beat 1.1 service, now containerised — a multi-stage `Dockerfile`,
+`.dockerignore`, and a `python -m beacon <api|checker>` entrypoint behind a single image.
+Runs under Docker locally; not yet on Kubernetes.
 
 ## Repository layout (planned)
 
@@ -202,7 +222,7 @@ pyproject.toml
 Dockerfile            api / checker image
 frontend/Dockerfile   multi-stage frontend image (node build -> nginx)
 docker-compose.yml    local dev database
-Makefile              cluster provisioning + bootstrap (incl. ingress-nginx)
+Makefile              image build + run; later, cluster provisioning + bootstrap
 kind/                 per-environment kind cluster configs
 k8s/
   base/               shared Kubernetes manifests (api, checker, frontend, ingress)
