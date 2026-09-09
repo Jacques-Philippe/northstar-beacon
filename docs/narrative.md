@@ -6,8 +6,10 @@ moment-to-moment work (writing code, reading logs, forming a diagnosis before th
 given) is where the learning happens. Individual failures are still revealed gradually
 within a beat.
 
-Keep this document in sync as beats are played, amended, or reordered. Record *what
-actually happened* (including divergences from the script) in `docs/log.md`.
+Keep this document in sync as beats are played, amended, or reordered — when a beat diverges
+from the script, edit the beat here to match what actually happened. The running record of
+what happened is the git history, the merged PRs, and the closed issues; decisions that were
+a real trade-off go in `docs/adr/`.
 
 ## Design principle: into the cluster fast
 

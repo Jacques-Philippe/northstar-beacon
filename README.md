@@ -151,8 +151,8 @@ the promotion pipeline arrive in Act 4.
   diagnosis gauntlet.
 
 `docs/narrative.md` is the **roadmap of record**: the full beat-by-beat script, with each
-beat's trigger, build, complication, and lesson. `docs/log.md` records what actually
-happened.
+beat's trigger, build, complication, and lesson; it is amended in place as beats are
+played. What actually happened is the git history, the merged PRs, and the closed issues.
 
 ## Tech stack
 
@@ -201,7 +201,6 @@ k8s/
 .github/workflows/    CI/CD pipelines
 docs/
   narrative.md        the beat-by-beat script
-  log.md              running journal of what actually happened
   adr/                architecture decision records
 CONTEXT.md            domain glossary
 ```

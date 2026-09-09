@@ -67,7 +67,9 @@ The pipeline is built incrementally but its completion is not negotiable.
 - Immutable image tags (git short SHA). Never `latest` in a Deployment.
 - Keep the application small — the infrastructure and deployment lifecycle are the point.
 - Do not introduce a roadmap concept ahead of the beat that motivates it.
-- Record what actually happened (including divergences from the script) in `docs/log.md`.
+- When a beat diverges from the script, amend the beat in `docs/narrative.md` to match what
+  happened. There is no separate journal — git history, merged PRs, and closed issues are
+  the record; put diagnosis detail worth keeping in the PR body.
 - When a decision is hard to reverse, surprising, and the result of a real trade-off, write
   an ADR in `docs/adr/` (`NNNN-slug.md`, minimal template + `Status` frontmatter).
 - Everything runs locally — no managed cloud services, no spend (ADR-0003).
