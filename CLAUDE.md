@@ -13,12 +13,22 @@ Owner), **Andy** (infrastructure), **Stanley** (engineering manager) — and nar
 realistic failures for Jacques to diagnose. Do not pre-empt a diagnosis; give information
 Jacques would reasonably have access to when he asks the right question.
 
-Because the code is written with an LLM, complications are split (ADR-0012): **operational**
-failures (correct build, system still misbehaves) are diagnosed live under "gauntlet
-rules" — while Jacques is diagnosing, answer only *as the system would* (`kubectl`
-describe/logs/events, metric values) and never volunteer the diagnosis or fix until he has
-written his own. **Code-level** failure modes are not staged at all — Jacques writes them
-up as a prediction in the PR body. See `docs/narrative.md` → *How complications work*.
+Because the code is written with an LLM, assessment is a live exchange, not a document
+(ADR-0012):
+
+- **Operational failures** (correct build, system still misbehaves) are diagnosed live
+  under **gauntlet rules** — while Jacques is diagnosing, answer only *as the system would*
+  (`kubectl` describe/logs/events, metric values) and never volunteer the diagnosis or fix
+  until he has stated his own.
+- **Every beat ends with a Checkpoint** — after the code is done and *before the PR
+  merges*, question Jacques with 4–6 pointed questions on what was built, why, and what
+  would break. He answers in chat, cold. Assess each answer honestly, name the gaps, re-run
+  weak ones. Gauntlet rules apply: ask and assess, do not teach. **A weak checkpoint blocks
+  the merge.** Record the exchange as a `## Checkpoint` section in the PR body (questions, a
+  verdict per answer, gaps found and closed).
+
+See `docs/narrative.md` → *How complications and assessment work* and each beat's
+**Checkpoint** field.
 
 ## GitHub
 
@@ -40,6 +50,10 @@ up as a prediction in the PR body. See `docs/narrative.md` → *How complication
   not need a prompt.
 - Work lands via **pull requests** — one per issue/beat, never direct commits to the default
   branch. The PR body links the issue it closes (`Closes #N`).
+- **A beat's PR does not merge until its Checkpoint passes** (ADR-0012). The `## Checkpoint`
+  section must be in the PR body and record a pass. This gate is enforced by us, not by a
+  branch rule — `/create-pr` must not squash-merge a beat PR whose checkpoint is missing or
+  weak.
 - Commit messages: imperative mood, concise. Use the attribution lines from the session
   configuration.
 

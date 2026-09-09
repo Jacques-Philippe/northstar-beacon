@@ -52,11 +52,11 @@ See `CLAUDE.md`.
 
 - **Trigger** — the stakeholder message or event that opens the beat.
 - **Build** — what the learner is expected to implement.
-- **Complication** — the realistic problem introduced. Not revealed all at once; the learner
-  investigates.
-- **Failure modes** — where a beat has no live complication: the things that *would* break,
-  written up by the learner in the PR body as a prediction (what breaks, why, the signal
-  you'd see), not discovered by accident. See the note below.
+- **Complication** — a realistic *operational* problem: correct build, system still
+  misbehaves. Not revealed all at once; the learner investigates. Only beats with such a
+  problem carry this field.
+- **Checkpoint** — what the learner is questioned on before the PR merges. See the note
+  below.
 - **Lesson** — the intended takeaway.
 - **Roadmap ref** — this beat's number in the overall arc (1–22). `README.md` carries only
   an Act-level summary; this file is the roadmap of record.
@@ -64,25 +64,27 @@ See `CLAUDE.md`.
 Failures are deliberately varied in root cause: application bug, Kubernetes/config error,
 database/dependency failure, or the monitored target genuinely being down.
 
-### How complications work when the code is written with an LLM
+### How complications and assessment work with an LLM in the loop
 
 The learner pair-programs with an LLM, so "you wrote a subtle bug, now debug it" does not
-happen by accident — the code arrives correct. Complications are therefore split (ADR-0012):
+happen by accident — the code arrives correct — and any mechanism that asks the learner to
+*write something* (a prediction, a design note, the PR body) is defeated the same way.
+See ADR-0012.
 
-- **Operational complications** — the build is correct and the system still misbehaves
+- **Operational complications stay.** The build is correct and the system still misbehaves
   because of how the pieces fit together (image never loaded into kind, a Service
-  `targetPort` mismatch, a stale ReplicaSet, the wrong `kubectl` context). These stay, and
-  are diagnosed **live under gauntlet rules**: when the learner is diagnosing, Claude
-  answers only *as the system would* — it provides logs, `kubectl describe`, events, metric
-  values when asked the right question, and does **not** volunteer the diagnosis. This is
-  the Beat 4.4 model applied throughout.
-- **Code-level complications** — a bug that would have lived in the application or a
-  config file. These are replaced by a **Failure modes** write-up in the PR body: the
-  learner states what would break, why, and how they'd catch it. Prediction, not post-hoc
-  discovery.
-
-A beat's **Complication** field is kept only where it is operational. Where the original
-script had a code-level complication, it becomes **Failure modes**.
+  `targetPort` mismatch, a stale ReplicaSet, the wrong `kubectl` context). Diagnosed **live
+  under gauntlet rules**: while the learner is diagnosing, Claude answers only *as the
+  system would* — logs, `kubectl describe`, events, metric values in response to the right
+  question — and does **not** volunteer the diagnosis. This is the Beat 4.4 model applied
+  throughout, and it holds whenever the learner is mid-diagnosis.
+- **Every beat ends with a Checkpoint.** After the code is done and **before the PR
+  merges**, Claude asks the learner four to six pointed questions on what was built, why,
+  and what would break. The learner answers in chat, cold — no reading the diff first, no
+  help. Claude assesses each answer and names the gaps; weak answers are re-run.
+  **A weak checkpoint blocks the merge.** Claude records the exchange as a *Checkpoint*
+  section in the PR body (questions, a verdict per answer, gaps found and closed).
+  Gauntlet rules apply during it: Claude asks and assesses, it does not teach.
 
 ---
 
@@ -113,12 +115,13 @@ script had a code-level complication, it becomes **Failure modes**.
   container command selects. `Makefile` targets tag the image with the git short SHA
   (no `latest`). Build and run both entrypoints under Docker; confirm the API answers on
   the published port and the checker starts its loop.
-- **Failure modes** (write-up in the PR — this beat has no live complication): why the app
-  must bind `0.0.0.0` and not `127.0.0.1` (a loopback bind is unreachable through the
-  published port); what a runtime dependency left in the dev group looks like at
-  `docker run` time versus at build time; `containerPort` / published-port / app-listen
-  mismatch; why the build context matters (`.dockerignore`, and copying `pyproject.toml` /
-  `uv.lock` before the source so the dependency layer caches).
+- **Checkpoint.** No live complication this beat. Questioning covers: source vs. build
+  artifact vs. image vs. container; why the app must bind `0.0.0.0` and not `127.0.0.1`,
+  and how that failure would present; what a runtime dependency left in the dev group does
+  at `docker run` time versus at build time; `containerPort` / published-port / app-listen
+  mismatch; what the build context is and why `.dockerignore` and layer ordering
+  (`pyproject.toml` / `uv.lock` before the source) matter; what the multi-stage split buys
+  and what is in the runtime image versus the build stage.
 - **Lesson.** Source vs. build artifact vs. image vs. container. Build context and layer
   caching. Why the container environment differs from the laptop. Multi-stage builds: the
   build toolchain does not ship in the runtime image.
