@@ -186,9 +186,22 @@ Out of scope unless a concrete need arises: Redis, Kafka, microservices, cloud
 infrastructure, authentication, Helm, a Prometheus/Grafana deployment, GitOps controllers.
 See `docs/narrative.md` → *Optional later beats* for topics deliberately deferred.
 
+## Running locally
+
+```
+uv sync
+uv run uvicorn beacon.api.app:app --reload      # API on :8000, checker runs in-process
+uv run pytest                                    # test suite
+uv run ruff check && uv run ruff format --check  # lint + format (the CI `test` check)
+```
+
+Configuration is read from `BEACON_`-prefixed environment variables (see `beacon/config.py`).
+
 ## Status
 
-Project scaffolding. No application code yet.
+Beat 1.1 in progress: minimal FastAPI service — `Monitor` CRUD, in-process checker,
+in-memory storage behind the `Storage` seam, `/health/*` stubs, JSON logging, pytest suite,
+and the CI `test` workflow. Not yet containerised or deployed.
 
 ## Repository layout (planned)
 
