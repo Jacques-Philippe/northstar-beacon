@@ -1,7 +1,9 @@
 # Beacon — working conventions
 
 Context for Claude when working in this repo. The project overview is in `README.md`; the
-full planned story arc is in `docs/narrative.md`.
+full planned story arc is in `docs/narrative.md`; settled decisions and their reasoning are
+in `docs/adr/`; domain vocabulary is in `CONTEXT.md` (follow it — e.g. never write bare
+"probe" for the Kubernetes concept).
 
 ## What this is
 
@@ -23,9 +25,12 @@ Jacques would reasonably have access to when he asks the right question.
   the `test` status check must pass. The `test` check is produced by the CI workflow added
   in the first feature PR.
 - Every requirement, feature request, and reported failure is tracked as a **GitHub
-  issue**. When a stakeholder makes a request in the narrative, open a matching issue
-  (`gh issue create`) before implementation starts. Keep the issue body in the stakeholder's
-  voice plus an acceptance checklist. Reference the beat from `docs/narrative.md`.
+  issue**, opened before implementation starts, with the body in the stakeholder's voice
+  plus an acceptance checklist and a reference to the beat in `docs/narrative.md`.
+- **Confirm with Jacques before any outward-facing GitHub action** — creating an issue,
+  opening a PR, pushing a branch to `origin`, or changing repo settings he did not name.
+  Propose it and wait for a yes. Local work (commits on a feature branch, file edits) does
+  not need a prompt.
 - Work lands via **pull requests** — one per issue/beat, never direct commits to the default
   branch. The PR body links the issue it closes (`Closes #N`).
 - Commit messages: imperative mood, concise. Use the attribution lines from the session
@@ -36,20 +41,26 @@ Jacques would reasonably have access to when he asks the right question.
 The GitHub Actions CI/CD pipeline is a **committed outcome of the project**, not optional
 polish. By the end it must, at minimum:
 
-1. run the pytest suite on every pull request,
+1. run the pytest suite on every pull request (the `test` check),
 2. build the container image on merge, tagged with the immutable git short SHA,
 3. push it to GHCR (the container registry),
-4. update the Kubernetes manifests and roll the change out to the kind cluster,
-5. support a deliberate rollback (Act 4).
+4. auto-deploy that image to the `dev` cluster,
+5. promote the *same* image to `staging` then `prod` via a gated `workflow_dispatch`
+   (build once — never rebuild per environment),
+6. support a deliberate rollback by re-pointing an overlay at a previous tag (Act 4).
 
 The pipeline is built incrementally but its completion is not negotiable.
 
 ## Local environment
 
-- Python, FastAPI, pytest
-- Docker, Docker Compose (local dev database)
-- kind (local Kubernetes cluster), kubectl
-- Kubernetes manifests live in `k8s/`
+- Python 3.12, `uv` + `pyproject.toml`, FastAPI, pytest
+- SQLAlchemy 2.0 ORM (sync) + Alembic; `Storage` protocol with in-memory and Postgres
+  implementations
+- Docker, Docker Compose (local dev database only)
+- Three kind clusters — `beacon-dev`, `beacon-staging`, `beacon-prod` — provisioned via the
+  `Makefile` and `kind/<env>.yaml`
+- Manifests: `k8s/base/` + `k8s/overlays/{dev,staging,prod}/` (kustomize)
+- One image, two entrypoints: the container command selects `api` or `checker`
 
 ## Conventions
 
@@ -57,3 +68,6 @@ The pipeline is built incrementally but its completion is not negotiable.
 - Keep the application small — the infrastructure and deployment lifecycle are the point.
 - Do not introduce a roadmap concept ahead of the beat that motivates it.
 - Record what actually happened (including divergences from the script) in `docs/log.md`.
+- When a decision is hard to reverse, surprising, and the result of a real trade-off, write
+  an ADR in `docs/adr/` (`NNNN-slug.md`, minimal template + `Status` frontmatter).
+- Everything runs locally — no managed cloud services, no spend (ADR-0003).

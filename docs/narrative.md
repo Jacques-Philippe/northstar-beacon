@@ -22,12 +22,18 @@ New capabilities (history, Postgres, config, probes, splitting the checker, Stat
 CI/CD) are then layered on top of an app that is *already running in the cluster*. The
 deployment loop is the spine of the course, not a chapter in the middle.
 
+**Environments arrive in two stages.** Acts 1–3 run entirely against a single `beacon-dev`
+kind cluster. The `beacon-staging` and `beacon-prod` clusters, the kustomize overlay
+restructure, and the promotion pipeline all land together in Act 4 — so multi-environment
+work is a deliberate CI/CD lesson, not upfront ceremony. See ADR-0004 and ADR-0005.
+
 ## Process
 
 The project runs on a public GitHub repository. Each beat's **Trigger** is turned into a
 **GitHub issue** before its **Build** starts, and the work lands as a **pull request** that
-closes that issue. The CI/CD pipeline (Act 4) is a committed deliverable, not optional. See
-`CLAUDE.md`.
+closes that issue. The CI/CD pipeline (Act 4) is a committed deliverable, not optional.
+Settled design decisions are recorded in `docs/adr/`; domain vocabulary in `CONTEXT.md`.
+See `CLAUDE.md`.
 
 ## Cast
 
@@ -55,23 +61,29 @@ database/dependency failure, or the monitored target genuinely being down.
 
 ## Act 1 — Into the cluster
 
+*(single `beacon-dev` cluster throughout)*
+
 ### Beat 1.1 — A minimal service
 
 - **Trigger.** Michael: "I want to see which services we're monitoring and whether they're
   up right now." He wants a list of monitored endpoints plus their latest check result.
 - **Build.** `Monitor` CRUD; an in-process checker loop that probes each monitor on its
-  interval; current status derived from the latest check. In-memory storage.
-  `/health/live` and `/health/ready` stubs (both return 200 for now). pytest suite.
+  interval; current status derived from the latest check. Storage behind a narrow `Storage`
+  protocol with an `InMemoryStorage` implementation (ADR-0008). `/health/live` and
+  `/health/ready` stubs (both return 200 for now). Structured JSON logging from the start.
+  pytest suite.
 - **Complication.** None — this beat establishes the baseline. Keep it small.
-- **Lesson.** Shape of the app; what liveness vs. readiness will come to mean.
+- **Lesson.** Shape of the app; what liveness vs. readiness will come to mean; why the
+  storage seam exists.
 - **Roadmap ref.** 1.
 
 ### Beat 1.2 — Containerise
 
 - **Trigger.** Andy: "If you want this anywhere near the cluster it needs to be an image."
-- **Build.** `Dockerfile`, `.dockerignore`; a tag scheme based on the git short SHA (no
-  `latest`); build and run the container locally; confirm the API answers on the published
-  port.
+- **Build.** `Dockerfile` (Python 3.12, `uv` for dependency install from `pyproject.toml`),
+  `.dockerignore`; a tag scheme based on the git short SHA (no `latest`). One image, two
+  entrypoints — the container command selects `api` or `checker`. Build and run locally;
+  confirm the API answers on the published port.
 - **Complication.** One realistic Docker gotcha: wrong port exposed, a dev-only dependency
   missing from the image, or the app binding to `127.0.0.1` instead of `0.0.0.0`.
 - **Lesson.** Source vs. build artifact vs. image vs. container. Build context. Why the
@@ -81,9 +93,10 @@ database/dependency failure, or the monitored target genuinely being down.
 ### Beat 1.3 — Deploy to kind
 
 - **Trigger.** Andy: "Cluster's ready. Get Beacon running on it."
-- **Build.** Create the kind cluster; load the image; a `Deployment` (1 replica) and a
-  `Service`; reach the API via `kubectl port-forward`. Walk the
-  `kubectl get / describe / logs` loop.
+- **Build.** Provision the `beacon-dev` kind cluster from a committed `Makefile` +
+  `kind/dev.yaml` (`make dev-up`). Load the image; a `Deployment` (1 replica) and a
+  `Service` for `api`; reach the API via `kubectl port-forward`. Walk the
+  `kubectl get / describe / logs` loop. The checker still runs in-process inside `api`.
 - **Complication.** The first deploy does not work: `ImagePullBackOff` because the image was
   never loaded into kind, or a `containerPort` / Service `targetPort` mismatch so
   port-forward connects to nothing.
@@ -105,6 +118,8 @@ database/dependency failure, or the monitored target genuinely being down.
 ---
 
 ## Act 2 — State forces the architecture
+
+*(single `beacon-dev` cluster throughout)*
 
 ### Beat 2.1 — History creeps in
 
@@ -131,23 +146,27 @@ database/dependency failure, or the monitored target genuinely being down.
 ### Beat 2.3 — PostgreSQL
 
 - **Trigger.** Following 2.2: give Beacon somewhere durable to write.
-- **Build.** Add PostgreSQL. Docker Compose runs Postgres for the local dev inner loop. In
-  the cluster, Postgres runs as a `Deployment` with an `emptyDir` volume for now
-  (**deliberately naive** — still not durable; this is the setup for Act 3). App talks to
-  the DB via a connection URL from the environment.
+- **Build.** Add a `PostgresStorage` implementation of the `Storage` protocol — SQLAlchemy
+  2.0 ORM, synchronous, typed models (ADR-0009). Docker Compose runs Postgres for the local
+  dev inner loop. In the cluster, Postgres runs as a `Deployment` with an `emptyDir` volume
+  for now (**deliberately naive** — still not durable; this is the setup for Act 3). The app
+  reads its connection URL from the environment.
 - **Complication.** "Works in Compose, fails in kind": the DB host is still `localhost`
   instead of the Postgres `Service` name; or the app starts before Postgres accepts
   connections and crashes once.
 - **Lesson.** Cluster DNS and Service names. The app now has a dependency it doesn't
-  control the lifecycle of.
+  control the lifecycle of. Swapping a `Storage` implementation without touching call sites.
 - **Roadmap ref.** 7.
 
 ### Beat 2.4 — Config out of the image
 
 - **Trigger.** Andy: "The DB connection details are baked into the image. That's not going
-  to fly for more than one environment."
-- **Build.** `ConfigMap` for non-secret config (DB host, port, name, check defaults);
-  `Secret` for the DB username/password; wire both into the Pod via env.
+  to fly once there's more than one environment."
+- **Build.** `ConfigMap` for non-secret config (DB host, port, name, check defaults, log
+  level); `Secret` for the DB username/password, created out-of-band by a bootstrap script
+  and never committed (sealed-secrets is an *Optional later beat*). Wire both into
+  the Pod via env. Manifests stay flat for now — the kustomize base/overlay restructure
+  comes with the second environment in Beat 4.2.
 - **Complication.** A wrong value in the ConfigMap (DB host typo) → `CrashLoopBackOff`.
   Diagnose from `kubectl describe`, logs, and the restart count / backoff.
 - **Lesson.** Config is separate from the image and separately deployable. A bad config
@@ -158,13 +177,13 @@ database/dependency failure, or the monitored target genuinely being down.
 
 - **Trigger.** A schema change is needed — e.g. an index on `check_result (monitor_id,
   checked_at)` because `/uptime` has gotten slow, or a new nullable column.
-- **Build.** Introduce Alembic; a baseline migration for the existing schema; the change as
-  a second migration. Decide how migrations run relative to a rollout (init container / Job
-  / manual step).
+- **Build.** Wire up Alembic (ADR-0009); a baseline migration for the existing schema; the
+  change as a second migration. Run migrations as a Kubernetes `Job` (or init container)
+  ordered before the new Pods roll.
 - **Complication.** A migration that succeeds against an empty dev database behaves badly
   against realistic data: adds a `NOT NULL` column with no default, or takes a lock that
   blocks writes.
-- **Lesson.** Migrations are code that runs against production data. Forward/backward
+- **Lesson.** Migrations are code that runs against real data. Forward/backward
   compatibility during a rolling update (old and new code briefly coexist). Ordering of
   "migrate" vs. "new pods".
 - **Roadmap ref.** 9.
@@ -172,6 +191,8 @@ database/dependency failure, or the monitored target genuinely being down.
 ---
 
 ## Act 3 — Running it properly
+
+*(single `beacon-dev` cluster throughout)*
 
 ### Beat 3.1 — Readiness vs. liveness
 
@@ -220,13 +241,15 @@ database/dependency failure, or the monitored target genuinely being down.
 
 - **Trigger.** Stanley: "Before we make the database a permanent fixture in here — do we
   actually want to be running our own Postgres?"
-- **Build.** A short written decision record (`docs/decisions/0001-postgres-hosting.md`):
-  managed vs. in-cluster, weighing backups, failover, upgrades, on-call expertise, cost,
-  and blast radius.
-- **Complication.** None — this is a judgement beat.
-- **Lesson.** Not every workload belongs in Kubernetes. Decision **for the exercise**: run
-  in-cluster with real persistent storage in order to learn the primitives, with an
-  explicit note that production would use a managed service.
+- **Build.** A decision record, `docs/adr/0010-postgres-in-cluster.md`: the full
+  managed-vs-in-cluster analysis (backups, failover, upgrades, on-call expertise, cost,
+  blast radius), landing on **in-cluster** — referencing ADR-0003, since a managed database
+  costs money and the project has a zero-spend constraint. The record must state plainly
+  that a real shop would use a managed service.
+- **Complication.** None — this is a judgement beat. The *outcome* is constrained; the
+  *reasoning* is the exercise, and it is exactly the kind of tradeoff an interviewer probes.
+- **Lesson.** Not every workload belongs in Kubernetes. Recognising when a constraint (not
+  an engineering preference) is driving an architecture decision.
 - **Roadmap ref.** 13.
 
 ### Beat 3.5 — StatefulSet and PVC
@@ -256,38 +279,79 @@ database/dependency failure, or the monitored target genuinely being down.
   replicas" is safe for `api` but not for `checker`.
 - **Roadmap ref.** 15.
 
+### Beat 3.7 — A metrics endpoint
+
+- **Trigger.** Andy: "When the checker fell behind, how would we have known before the
+  monitored teams told us?"
+- **Build.** A Prometheus `/metrics` endpoint on `api` (and the checker): check throughput,
+  probe latency, queue depth / lag, incident counts. **No** Prometheus or Grafana
+  deployment — the endpoint and a documented `kubectl port-forward` + `curl` is enough for
+  the exercise.
+- **Complication.** None required; optionally, a metric that lies (a counter reset on every
+  scrape because it's per-request state).
+- **Lesson.** Instrumentation as a first-class concern; the difference between logs (events)
+  and metrics (aggregates); why you don't need the whole observability stack to get value.
+- **Roadmap ref.** 16.
+
 ---
 
-## Act 4 — CI/CD and the failure gauntlet
+## Act 4 — CI/CD, multiple environments, and the failure gauntlet
 
 ### Beat 4.1 — The pipeline
 
 - **Trigger.** Andy: "You've been deploying by hand for weeks. Let's automate it before
   someone fat-fingers a tag."
-- **Build.** GitHub Actions: run tests → build the image → push to GHCR with an immutable
-  tag (git SHA) → update the manifest → `kubectl rollout` → verify readiness.
+- **Build.** GitHub Actions: run the pytest suite on every PR as the `test` check (already
+  required by `protect-master`). On merge to `master`: build the image, tag it with the git
+  short SHA, push to GHCR, and auto-deploy to **`beacon-dev`**.
 - **Complication.** A pipeline that pushes `:latest` and a Deployment whose image reference
   never changes → "CI is green, why didn't my change deploy?"
 - **Lesson.** The pipeline as: source → build artifact → image → registry → Deployment
   update → rollout → Pods. Immutable tags are what make that chain auditable and
   reversible.
-- **Roadmap ref.** 16.
-
-### Beat 4.2 — Ship, then roll back
-
-- **Trigger.** Michael: "Send a webhook when an incident opens." (v1.1 — a real feature.)
-- **Build.** The webhook feature, shipped through the pipeline as a rolling update.
-- **Complication.** v1.2 ships a bad config value → rolling update, some Pods come up
-  broken, `/status` fails for a fraction of traffic → `kubectl rollout undo`.
-- **Lesson.** Rolling update mechanics (`maxSurge` / `maxUnavailable`); partial failure
-  mid-rollout; Kubernetes does not auto-roll-back; how to roll back deliberately and what
-  state the database is left in.
 - **Roadmap ref.** 17.
 
-### Beat 4.3 — The gauntlet
+### Beat 4.2 — Staging and production
 
-Each sub-beat is an independent incident. The learner forms a diagnosis *before* the cause
-is confirmed. Root causes are deliberately spread across categories.
+- **Trigger.** Stanley: "dev is not where we demo. Stand up staging and prod, and make
+  releasing to them boring."
+- **Build.**
+  - Provision `beacon-staging` and `beacon-prod` kind clusters (`make staging-up`,
+    `make prod-up`; `kind/staging.yaml`, `kind/prod.yaml`).
+  - Restructure manifests into kustomize `base/` + `overlays/{dev,staging,prod}/` (ADR-0006).
+    Overlays vary replica count, resource requests/limits, log level, image tag, and per-env
+    Secret/ConfigMap values. Each environment gets its own isolated Postgres (ADR-0005).
+  - Promotion (ADR-0007): merge → dev automatically; a gated `workflow_dispatch` (GitHub
+    Environments, self-review) re-points the **staging** then **prod** overlay at the
+    already-built, already-tested SHA tag — no rebuild. Each promotion is a commit bumping
+    the overlay tag.
+  - Seed each environment's `Monitor` rows separately (dev watches throwaway targets, prod
+    watches "real" Northstar services) — target lists are DB data, not overlay config.
+- **Complication.** "Works in dev, not in staging": an overlay patch typo, a Secret that was
+  only ever created in the dev cluster, or a `kubectl` context left pointing at the wrong
+  cluster.
+- **Lesson.** Build once, promote the artifact. `kubectl` contexts and the danger of the
+  ambient one. What legitimately differs between environments vs. what must be identical.
+- **Roadmap ref.** 18.
+
+### Beat 4.3 — Ship, then roll back
+
+- **Trigger.** Michael: "Send a webhook when an incident opens." (v1.1 — a real feature.)
+- **Build.** The webhook feature, shipped through the pipeline: merge → dev, promote →
+  staging → prod.
+- **Complication.** v1.2 promotes a bad config value to prod → rolling update, some Pods
+  come up broken, `/status` fails for a fraction of traffic → roll back by re-pointing the
+  prod overlay at the previous tag.
+- **Lesson.** Rolling update mechanics (`maxSurge` / `maxUnavailable`); partial failure
+  mid-rollout; Kubernetes does not auto-roll-back; rollback is promoting a known-good
+  artifact, not a rebuild; what state the database is left in.
+- **Roadmap ref.** 19.
+
+### Beat 4.4 — The gauntlet
+
+Each sub-beat is an independent incident, shipped to prod through the pipeline. The learner
+forms a diagnosis *before* the cause is confirmed. Root causes are deliberately spread
+across categories.
 
 | Version | Symptom | Root cause | Correct diagnosis |
 |---------|---------|-----------|-------------------|
@@ -296,7 +360,7 @@ is confirmed. Root causes are deliberately spread across categories.
 | **v2.2** | `api` returns 503, `checker` in `CrashLoopBackOff` | Postgres PVC full / Pod evicted | A dependency is down. Beacon is behaving correctly. |
 | **v2.3** | Behaviour differs between Pods for the "same" version | A stale ReplicaSet still serving / a node with an old cached image | Not every Pod is running what you think it is. |
 
-- **Roadmap ref.** 18.
+- **Roadmap ref.** 20.
 
 ---
 
@@ -312,8 +376,23 @@ Dropped into the acts where they bite hardest, not run as a separate phase.
 
 ---
 
+## Optional later beats
+
+Introduce only if the story wants them; each is a real topic deferred to keep the spine
+clear.
+
+- **Sealed Secrets / SOPS / External Secrets** — encrypted secrets committed to the repo,
+  replacing the out-of-band bootstrap script.
+- **GitOps (Argo CD / Flux)** — a controller in each cluster reconciling from the repo,
+  replacing the push-style promotion of Beat 4.2.
+- **Package Beacon as a Helm chart** — if a distribution / templating angle becomes
+  interesting.
+- **Staging as a namespace** instead of its own cluster — the fallback if three kind
+  clusters strains the laptop (ADR-0005).
+- **Async SQLAlchemy** — if request throughput ever makes the sync-in-threadpool model the
+  bottleneck (ADR-0009).
+
 ## Open questions / to decide
 
-- Migrations tool: Alembic assumed. Confirm.
-- Do we ever introduce a second environment (staging), or stay single-environment?
-- How far to take observability (structured logging only, or a metrics endpoint too)?
+- How migrations are triggered in the pipeline (Job before rollout vs. init container) —
+  settle when Beat 2.5 is played.
