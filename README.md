@@ -208,21 +208,46 @@ Beat 1.3: the image runs on a local **kind** cluster, `beacon-dev`. One `Deploym
 `kubectl port-forward` (an Ingress replaces that in Beat 2.3). Manifests are kustomize:
 `k8s/base/` + `k8s/overlays/dev/`, the overlay pinning the immutable git-SHA image tag.
 
-Needs `kind` on your PATH (`brew install kind`); `kubectl` provides the kustomize build.
+### Prerequisites
+
+| Tool | Why | Install (macOS) |
+|------|-----|-----------------|
+| **Docker** | kind runs the cluster as a container; the image is built here | Docker Desktop — must be **running** before `make dev-up` |
+| **kind** | provisions the local Kubernetes cluster | `brew install kind` |
+| **kubectl** | talks to the cluster; also provides the kustomize build (`apply -k`) | `brew install kubectl` |
+
+No standalone `kustomize` binary is needed — `kubectl` has it built in. Verify the setup:
 
 ```
-make dev-up                                        # create the beacon-dev cluster
-make deploy-dev                                     # build, load into kind, apply the dev overlay, wait for rollout
-make dev-status                                     # get deploy / rs / pod / svc for the app
+docker info >/dev/null && kind version && kubectl version --client
+```
 
+### Make targets
+
+| Command | What it does |
+|---------|--------------|
+| `make dev-up` | Create the `beacon-dev` kind cluster from `kind/dev.yaml`. Sets the `kind-beacon-dev` kubectl context. |
+| `make dev-down` | Delete the `beacon-dev` cluster. |
+| `make image` | `docker build` the image, tagged `beacon:<git short SHA>`. |
+| `make kind-load` | Build (via `make image`) and side-load the image into the kind node — kind has no registry access, so nothing is *pulled*. |
+| `make deploy-dev` | Full deploy loop: `kind-load`, rewrite `k8s/overlays/dev` to the current SHA, `kubectl apply -k`, then wait on `kubectl rollout status`. |
+| `make dev-status` | `kubectl get deploy,rs,pod,svc -l app=beacon` — the get/describe/logs loop starts here. |
+
+### First deploy
+
+```
+make dev-up
+make deploy-dev
+
+# reach the API (Service listens on 80, forwards to the container's 8000)
 kubectl --context kind-beacon-dev port-forward svc/beacon-api 8000:80
-curl localhost:8000/health/live
+curl localhost:8000/health/live        # {"status":"ok"}
 
-make dev-down                                       # tear the cluster down
+make dev-down                          # when you're done
 ```
 
-kind has no registry access, so the image is side-loaded with `kind load docker-image`
-(`make kind-load`, run for you by `deploy-dev`) rather than pulled.
+Override the image name with `make image IMAGE=beacon-local`; the SHA tag is always the
+current `git rev-parse --short HEAD`.
 
 ## Status
 
