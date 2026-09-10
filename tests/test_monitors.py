@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi.testclient import TestClient
 
-from beacon.models import Outcome
+from beacon.models import CheckResult
 from beacon.storage import InMemoryStorage
 
 VALID = {
@@ -76,9 +78,16 @@ def test_delete(client: TestClient) -> None:
 
 def test_status_derived_from_latest_result(client: TestClient, storage: InMemoryStorage) -> None:
     monitor_id = client.post("/monitors", json=VALID).json()["id"]
-    storage.set_latest_result(monitor_id, Outcome(ok=False, status_code=500, error=None))
+    t0 = datetime.now(UTC)
+    storage.append_result(
+        CheckResult(monitor_id=monitor_id, ok=False, status_code=500, checked_at=t0)
+    )
     assert client.get(f"/monitors/{monitor_id}").json()["status"] == "down"
-    storage.set_latest_result(monitor_id, Outcome(ok=True, status_code=200))
+    storage.append_result(
+        CheckResult(
+            monitor_id=monitor_id, ok=True, status_code=200, checked_at=t0 + timedelta(seconds=60)
+        )
+    )
     assert client.get(f"/monitors/{monitor_id}").json()["status"] == "up"
 
 

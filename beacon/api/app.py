@@ -36,7 +36,12 @@ def create_app(
         checker_task: asyncio.Task[None] | None = None
         checker: Checker | None = None
         if settings.checker_enabled:
-            checker = Checker(storage, active_prober, settings.checker_tick_seconds)
+            checker = Checker(
+                storage,
+                active_prober,
+                settings.checker_tick_seconds,
+                incident_failure_threshold=settings.incident_failure_threshold,
+            )
             checker_task = asyncio.create_task(checker.run())
         try:
             yield

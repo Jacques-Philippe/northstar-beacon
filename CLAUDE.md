@@ -55,10 +55,11 @@ See `docs/narrative.md` → *How complications and assessment work* and each bea
   not need a prompt.
 - Work lands via **pull requests** — one per issue/beat, never direct commits to the default
   branch. The PR body links the issue it closes (`Closes #N`).
-- **A beat's PR does not merge until its Checkpoint passes** (ADR-0012). The `## Checkpoint`
-  section must be in the PR body and record a pass. This gate is enforced by us, not by a
-  branch rule — `/create-pr` must not squash-merge a beat PR whose checkpoint is missing or
-  weak.
+- **A beat's PR does not merge until its Checkpoint passes** (ADR-0012). This is the repo's
+  **pre-merge gate** (the one `/create-pr` step 9 looks for): the PR body must carry a
+  `## Checkpoint` section recording a pass. The gate is enforced by us, not by a branch
+  rule — `/create-pr` must not squash-merge a beat PR whose checkpoint is missing or weak.
+  Non-beat branches (tooling, docs-only housekeeping) are not gated.
 - Commit messages: imperative mood, concise. Use the attribution lines from the session
   configuration.
 

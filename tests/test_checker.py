@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 from beacon.checker import Checker
-from beacon.models import Monitor, Outcome
+from beacon.models import CheckResult, Monitor
 from beacon.storage import InMemoryStorage
 from tests.conftest import FakeProber
 
@@ -33,8 +33,10 @@ def test_tick_skips_a_monitor_checked_within_its_interval() -> None:
     storage = InMemoryStorage()
     prober = FakeProber()
     monitor = make(storage, interval_seconds=60)
-    storage.set_latest_result(
-        monitor.id, Outcome(ok=True, status_code=200, checked_at=NOW - timedelta(seconds=30))
+    storage.append_result(
+        CheckResult(
+            monitor_id=monitor.id, ok=True, status_code=200, checked_at=NOW - timedelta(seconds=30)
+        )
     )
     checker = Checker(storage, prober)
 
@@ -47,8 +49,10 @@ def test_tick_probes_again_once_the_interval_has_elapsed() -> None:
     storage = InMemoryStorage()
     prober = FakeProber()
     monitor = make(storage, interval_seconds=60)
-    storage.set_latest_result(
-        monitor.id, Outcome(ok=True, status_code=200, checked_at=NOW - timedelta(seconds=90))
+    storage.append_result(
+        CheckResult(
+            monitor_id=monitor.id, ok=True, status_code=200, checked_at=NOW - timedelta(seconds=90)
+        )
     )
     checker = Checker(storage, prober)
 

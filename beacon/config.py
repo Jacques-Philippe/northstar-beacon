@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # Fallback timeout when a monitor does not specify one (it always does today).
     default_timeout_seconds: float = 10.0
 
+    # Consecutive failed checks before an incident opens. Recovery is asymmetric: a single
+    # success closes the incident. Michael is expected to renegotiate this ("what counts as
+    # degraded"), hence a config knob rather than a literal.
+    incident_failure_threshold: int = 3
+
 
 @lru_cache
 def get_settings() -> Settings:
