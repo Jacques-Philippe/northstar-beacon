@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from beacon.models import Monitor, Outcome, Status, status_for
+from beacon.models import Incident, Monitor, Outcome, Status, status_for
 
 Method = Literal["GET", "HEAD", "POST"]
 Name = Annotated[str, Field(min_length=1, max_length=200)]
@@ -82,4 +82,26 @@ class MonitorRead(BaseModel):
             **monitor.model_dump(),
             status=status_for(latest),
             latest_result=latest,
+        )
+
+
+class IncidentRead(BaseModel):
+    id: str
+    monitor_id: str
+    opened_at: datetime
+    resolved_at: datetime | None
+    duration_seconds: float
+    ongoing: bool
+
+    @classmethod
+    def build(cls, incident: Incident, *, now: datetime) -> IncidentRead:
+        return cls(
+            id=incident.id,
+            monitor_id=incident.monitor_id,
+            opened_at=incident.opened_at,
+            resolved_at=incident.resolved_at,
+            duration_seconds=round(
+                ((incident.resolved_at or now) - incident.opened_at).total_seconds(), 3
+            ),
+            ongoing=incident.is_open,
         )

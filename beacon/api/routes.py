@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
-from beacon.api.schemas import MonitorCreate, MonitorRead, MonitorUpdate
+from beacon.api.schemas import IncidentRead, MonitorCreate, MonitorRead, MonitorUpdate
+from beacon.reporting import MonitorUptime, StatusReport, monitor_uptime, status_report
 from beacon.storage.base import NotFound, Storage
 
 log = logging.getLogger("beacon.api")
@@ -14,6 +16,10 @@ router = APIRouter()
 
 def _storage(request: Request) -> Storage:
     return request.app.state.storage
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _read(storage: Storage, monitor_id: str) -> MonitorRead:
@@ -68,6 +74,29 @@ def delete_monitor(request: Request, monitor_id: str) -> Response:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "monitor not found") from None
     log.info("monitor deleted", extra={"monitor_id": monitor_id})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/monitors/{monitor_id}/uptime", response_model=MonitorUptime)
+def get_monitor_uptime(request: Request, monitor_id: str) -> MonitorUptime:
+    storage = _storage(request)
+    try:
+        storage.get_monitor(monitor_id)
+    except NotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "monitor not found") from None
+    return monitor_uptime(storage, monitor_id, now=_now())
+
+
+@router.get("/incidents", response_model=list[IncidentRead])
+def list_incidents(request: Request, monitor_id: str | None = None) -> list[IncidentRead]:
+    storage = _storage(request)
+    now = _now()
+    incidents = storage.list_incidents(monitor_id=monitor_id)
+    return [IncidentRead.build(i, now=now) for i in incidents]
+
+
+@router.get("/status", response_model=StatusReport)
+def get_status(request: Request) -> StatusReport:
+    return status_report(_storage(request), now=_now())
 
 
 @router.get("/health/live")

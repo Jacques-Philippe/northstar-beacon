@@ -185,6 +185,13 @@ See ADR-0012.
 - **Build.** `CheckResult` (append-only), `Incident` (opens after N consecutive failures,
   closes on recovery), `/monitors/{id}/uptime`, `/incidents`, `/status`. Ship through the
   loop.
+- **As played (#10).** Built against `InMemoryStorage` only — SQLAlchemy/Alembic stay in
+  Beat 2.5, so there is no migration yet. Settled decisions: threshold `N` is
+  `BEACON_INCIDENT_FAILURE_THRESHOLD` (default 3), recovery is asymmetric (first success
+  closes); `Incident.opened_at` is **backdated to the first failure** in the run, found by
+  walking back over `CheckResult`s (survives a checker restart, unlike in-memory streak
+  state); uptime is `1 − clipped incident downtime / window`; a disabled monitor's open
+  incident is left open. `/monitors/{id}/results` deferred to a later beat.
 - **Complication.** None yet — the trap is set in 2.4.
 - **Checkpoint.** Questioning covers: why uptime is derived from incidents rather than
   scanning every `CheckResult`; what makes `CheckResult` append-only and why that matters;

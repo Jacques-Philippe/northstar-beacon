@@ -74,13 +74,15 @@ Mental model to keep returning to: **desired state → controllers → actual st
 |--------|-------------|------------|
 | **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `owning_team`, `created_at` |
 | **CheckResult** | The outcome of one probe. Append-only, high-volume. | `id`, `monitor_id`, `checked_at`, `ok`, `status_code`, `response_ms`, `error` |
-| **Incident** | Opens after N consecutive failing checks, closes on recovery. | `id`, `monitor_id`, `started_at`, `resolved_at`, `cause` (last error) |
+| **Incident** | Opens once a run of consecutive failing checks reaches `BEACON_INCIDENT_FAILURE_THRESHOLD` (default 3), backdated to the first failure in that run; closes on the first success. | `id`, `monitor_id`, `opened_at`, `resolved_at` |
 
 Derived state:
 
-- **Current status** of a monitor — from its latest `CheckResult` (`up` / `down`, and
-  `degraded` if slow but passing).
-- **Uptime %** over a window — computed from incidents (cheap) rather than scanning every result.
+- **Current status** of a monitor — from its latest `CheckResult` (`up` / `down`;
+  `unknown` before the first probe). `degraded` is a later beat.
+- **Uptime %** for the last day and the last week — one minus the share of the window
+  covered by incidents, clipped to the window edges. Computed from incidents, never by
+  scanning `CheckResult`s.
 
 `CheckResult` is the row that grows without bound. Keeping it healthy — indexes on
 `(monitor_id, checked_at)`, a retention policy, the migration that adds them — is the
@@ -95,10 +97,9 @@ concrete reason the database chapters matter.
 | GET    | `/monitors/{id}` | Monitor detail + current status |
 | PATCH  | `/monitors/{id}` | Update a monitor |
 | DELETE | `/monitors/{id}` | Remove a monitor |
-| GET    | `/monitors/{id}/results` | Recent check results (`?since=`) |
-| GET    | `/monitors/{id}/uptime` | Uptime % over a window (`?window=24h`) |
-| GET    | `/incidents` | Incident history (`?monitor=&open=`) |
-| GET    | `/incidents/{id}` | Incident detail |
+| GET    | `/monitors/{id}/results` | Recent check results (`?since=`) — *later beat* |
+| GET    | `/monitors/{id}/uptime` | Uptime % for the last day and the last week |
+| GET    | `/incidents` | Incident history (`?monitor_id=`) |
 | GET    | `/status` | Dashboard summary across all monitors |
 | GET    | `/health/live` | Liveness — is the process up? |
 | GET    | `/health/ready` | Readiness — can it serve traffic (e.g. DB reachable)? |
