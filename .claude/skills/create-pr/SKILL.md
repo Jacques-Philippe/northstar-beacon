@@ -53,11 +53,10 @@ commit message and deletes the branch. Pass `--no-merge` to stop after opening t
    - `--dry-run` → skip steps 7–9 entirely; print the title, the rendered PR body and the
      squash message to the terminal.
 9. **Merge the PR** (skip if `--no-merge`, `--draft`, or `--dry-run`):
-   - **Checkpoint gate (ADR-0012).** If this branch implements a narrative beat, the PR body
-     must contain a `## Checkpoint` section recording a *pass*. If it is missing or records
-     a weak/failed checkpoint, **do not merge** — stop, leave the PR open, and tell Jacques
-     the checkpoint must be run (Claude questions him cold on the beat; a weak checkpoint
-     blocks the merge). Non-beat branches (tooling, docs-only housekeeping) skip this gate.
+   - **Repo merge gate.** If the repo's `CLAUDE.md` or contributing docs define a
+     pre-merge gate (a PR-body section that must record a pass, a required sign-off), honour
+     it: if the gate is unmet, **do not merge** — stop, leave the PR open, and tell the user
+     what the gate requires. If the repo defines no such gate, skip this step.
    - `gh pr merge <number> --repo <origin> --squash --subject "<title>"
      --body-file <squash-body.md> --delete-branch`
    - If the merge fails because the PR is **not mergeable** (conflicts, branch behind base,
@@ -89,10 +88,8 @@ The PR body (`pr-body.md`, passed via `--body-file`):
 ### Testing
 <1–6 bullet points: what tests were added and what they cover>
 
-### Checkpoint
-<Beat PRs only (ADR-0012). The questions Claude put to Jacques, one line per answer with a
-verdict, and any gaps found and closed. Must record a pass before the PR merges. Omit the
-section entirely for non-beat branches.>
+<Any PR-body section the repo's merge gate requires (see step 9) goes here, in the form
+that gate specifies. Omit if the repo defines no such gate.>
 
 ### Notes
 <Optional: breaking changes, known limitations, follow-up work>
@@ -132,4 +129,4 @@ PR is not merged, print the whole block to the terminal instead:
   merging
 - Never force-push, rewrite history, or force a non-mergeable PR through; never create or
   merge against a remote other than `origin`
-- Never merge a beat PR without a passing `## Checkpoint` in the body (ADR-0012)
+- Never merge past an unmet repo merge gate (see step 9)
