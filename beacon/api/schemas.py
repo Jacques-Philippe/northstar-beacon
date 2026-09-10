@@ -19,6 +19,7 @@ Name = Annotated[str, Field(min_length=1, max_length=200)]
 Url = Annotated[str, Field(pattern=r"^https?://")]
 ExpectedStatus = Annotated[int, Field(ge=100, le=599)]
 Positive = Annotated[int, Field(gt=0)]
+OwningTeam = Annotated[str, Field(min_length=1, max_length=200)]
 
 
 def _check_timeout_below_interval(interval: int, timeout: int) -> None:
@@ -34,6 +35,7 @@ class MonitorCreate(BaseModel):
     interval_seconds: Positive = 60
     timeout_seconds: Positive = 10
     enabled: bool = True
+    owning_team: OwningTeam | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> MonitorCreate:
@@ -52,6 +54,7 @@ class MonitorUpdate(BaseModel):
     interval_seconds: Positive | None = None
     timeout_seconds: Positive | None = None
     enabled: bool | None = None
+    owning_team: OwningTeam | None = None
 
     def apply(self, monitor: Monitor) -> Monitor:
         updated = monitor.model_copy(update=self.model_dump(exclude_unset=True, exclude_none=True))
@@ -68,6 +71,7 @@ class MonitorRead(BaseModel):
     interval_seconds: int
     timeout_seconds: int
     enabled: bool
+    owning_team: str | None
     created_at: datetime
     status: Status
     latest_result: Outcome | None

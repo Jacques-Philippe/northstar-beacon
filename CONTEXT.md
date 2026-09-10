@@ -14,6 +14,11 @@ model and API live in `README.md`.
 The configured intent to watch one HTTP endpoint on a schedule.
 _Avoid_: check, target, service, site, probe.
 
+**owning_team**:
+The team responsible for a Monitor's *target* — who to contact when it is failing. A free
+text label on the Monitor, not a modelled entity. Optional.
+_Avoid_: owner, group, squad.
+
 **CheckResult**:
 The recorded outcome of one probe of a Monitor — reachable or not, status code, latency.
 _Avoid_: ping, sample, hit, check.
