@@ -72,7 +72,7 @@ Mental model to keep returning to: **desired state → controllers → actual st
 
 | Entity | Description | Key fields |
 |--------|-------------|------------|
-| **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `created_at` |
+| **Monitor** | An HTTP endpoint Beacon watches. | `id`, `name`, `url`, `method`, `expected_status`, `interval_seconds`, `timeout_seconds`, `enabled`, `owning_team`, `created_at` |
 | **CheckResult** | The outcome of one probe. Append-only, high-volume. | `id`, `monitor_id`, `checked_at`, `ok`, `status_code`, `response_ms`, `error` |
 | **Incident** | Opens after N consecutive failing checks, closes on recovery. | `id`, `monitor_id`, `started_at`, `resolved_at`, `cause` (last error) |
 
@@ -251,9 +251,14 @@ current `git rev-parse --short HEAD`.
 
 ## Status
 
-Beat 1.3 in progress: the containerised service now deploys to the `beacon-dev` kind
-cluster — `kind/dev.yaml`, kustomize manifests under `k8s/`, and `Makefile` targets for
-provisioning, image side-load, and rollout. Reached via `kubectl port-forward`.
+Beat 1.4 in progress: the deploy loop is now routine. `owning_team` was added to `Monitor`
+(create / read / patch) and shipped through rebuild → new SHA tag → overlay bump →
+`kubectl apply` → `kubectl rollout status`. Persistence is still in-memory (Act 2), so no
+storage or migration work.
+
+Beat 1.3: the containerised service deploys to the `beacon-dev` kind cluster —
+`kind/dev.yaml`, kustomize manifests under `k8s/`, and `Makefile` targets for provisioning,
+image side-load, and rollout. Reached via `kubectl port-forward`.
 
 ## Repository layout (planned)
 

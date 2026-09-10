@@ -40,6 +40,7 @@ class Monitor(BaseModel):
     interval_seconds: int = 60
     timeout_seconds: int = 10
     enabled: bool = True
+    owning_team: str | None = None  # the team to ping when this monitor is failing
     created_at: datetime = Field(default_factory=_now)
 
 

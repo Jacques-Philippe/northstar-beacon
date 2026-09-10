@@ -25,6 +25,25 @@ def test_create_returns_201_with_defaults_and_unknown_status(client: TestClient)
     assert body["id"]
 
 
+def test_owning_team_defaults_to_null_and_round_trips(client: TestClient) -> None:
+    assert client.post("/monitors", json=VALID).json()["owning_team"] is None
+
+    created = client.post("/monitors", json={**VALID, "owning_team": "Platform"}).json()
+    assert created["owning_team"] == "Platform"
+    assert client.get(f"/monitors/{created['id']}").json()["owning_team"] == "Platform"
+
+
+def test_owning_team_set_via_patch(client: TestClient) -> None:
+    monitor_id = client.post("/monitors", json=VALID).json()["id"]
+    resp = client.patch(f"/monitors/{monitor_id}", json={"owning_team": "Payments"})
+    assert resp.status_code == 200
+    assert resp.json()["owning_team"] == "Payments"
+
+
+def test_rejects_empty_owning_team(client: TestClient) -> None:
+    assert client.post("/monitors", json={**VALID, "owning_team": ""}).status_code == 422
+
+
 def test_list_is_empty_then_reflects_creates(client: TestClient) -> None:
     assert client.get("/monitors").json() == []
     client.post("/monitors", json=VALID)
