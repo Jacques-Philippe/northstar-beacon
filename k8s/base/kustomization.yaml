@@ -4,6 +4,8 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
 
 # Stamp app=beacon onto every object (and into selectors) so `kubectl get -l app=beacon`
 # returns the Deployment and Service too, not just the Pod and ReplicaSet.

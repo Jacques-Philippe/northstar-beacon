@@ -10,3 +10,5 @@ resources:
 images:
   - name: beacon
     newTag: "9fda26b"
+  - name: beacon-frontend
+    newTag: "9fda26b"

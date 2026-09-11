@@ -229,9 +229,10 @@ docker info >/dev/null && kind version && kubectl version --client
 |---------|--------------|
 | `make dev-up` | Create the `beacon-dev` kind cluster from `kind/dev.yaml`. Sets the `kind-beacon-dev` kubectl context. |
 | `make dev-down` | Delete the `beacon-dev` cluster. |
-| `make image` | `docker build` the image, tagged `beacon:<git short SHA>`. |
-| `make kind-load` | Build (via `make image`) and side-load the image into the kind node — kind has no registry access, so nothing is *pulled*. |
-| `make deploy-dev` | Full deploy loop: `kind-load`, rewrite `k8s/overlays/dev` to the current SHA, `kubectl apply -k`, then wait on `kubectl rollout status`. |
+| `make image` | `docker build` the api/checker image, tagged `beacon:<git short SHA>`. |
+| `make frontend-image` | `docker build` the frontend image, tagged `beacon-frontend:<git short SHA>`. |
+| `make kind-load` | Build both images and side-load them into the kind node — kind has no registry access, so nothing is *pulled*. |
+| `make deploy-dev` | Full deploy loop: `kind-load`, rewrite `k8s/overlays/dev` to the current SHA (both images), `kubectl apply -k`, then wait on `kubectl rollout status` for each Deployment. |
 | `make dev-status` | `kubectl get deploy,rs,pod,svc -l app=beacon` — the get/describe/logs loop starts here. |
 
 ### First deploy
@@ -250,9 +251,44 @@ make dev-down                          # when you're done
 Override the image name with `make image IMAGE=beacon-local`; the SHA tag is always the
 current `git rev-parse --short HEAD`.
 
+### Frontend
+
+Beat 2.2: a read-only Vue 3 / Vite single-page app (`frontend/`) renders the monitor list
+(status dot, owning team, 24h/7d uptime) and recent incidents. It is its own image — a
+multi-stage build (`node` builds static assets, `nginx` serves them) — and its own
+`Deployment`/`Service`, separate from `api` (ADR-0011).
+
+There is no Ingress yet (Beat 2.3), so it's reached with a second `kubectl port-forward`
+alongside the one for `api`. The frontend's API base URL is baked in at **build time**
+(`VITE_API_URL`), so it only works because a forward happens to be running on the exact
+port it was built against — deliberately fragile, and the reason `api` needs CORS headers
+for a different origin (`beacon/config.py`'s `cors_origins`).
+
+```
+make deploy-dev                                            # builds + deploys api and frontend
+
+kubectl --context kind-beacon-dev port-forward svc/beacon-api 8000:80
+kubectl --context kind-beacon-dev port-forward svc/beacon-frontend 8080:80
+open http://localhost:8080                                 # the frontend was built with
+                                                             # VITE_API_URL=http://localhost:8000
+```
+
+Run it outside the cluster during frontend development:
+
+```
+cd frontend && npm install
+VITE_API_URL=http://localhost:8000 npm run dev              # Vite dev server on :5173
+```
+
 ## Status
 
-Beat 1.4 in progress: the deploy loop is now routine. `owning_team` was added to `Monitor`
+Beat 2.2: a Vue frontend (`frontend/`) renders the monitor list, uptime numbers, and recent
+incidents against the existing API — its own image, `Deployment`, and `Service`, reached via
+a second `kubectl port-forward` (ADR-0011). CORS was added to `api` to allow the frontend's
+origin; both the two-port-forward setup and the CORS config are deliberately temporary,
+removed once Beat 2.3's Ingress puts both behind one origin.
+
+Beat 1.4: the deploy loop is now routine. `owning_team` was added to `Monitor`
 (create / read / patch) and shipped through rebuild → new SHA tag → overlay bump →
 `kubectl apply` → `kubectl rollout status`. Persistence is still in-memory (Act 2), so no
 storage or migration work.
