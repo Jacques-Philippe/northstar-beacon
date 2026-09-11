@@ -1,0 +1,25 @@
+# The frontend workload — its own image, its own Deployment, separate from api (ADR-0011).
+# One replica for now, same as api. No probes or resource requests/limits yet (Act 3).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beacon-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beacon
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: beacon
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          # Tag is set per-environment by the overlay (kustomize `images:`). Never `latest`.
+          image: beacon-frontend:overlay-sets-this
+          ports:
+            - name: http
+              containerPort: 80

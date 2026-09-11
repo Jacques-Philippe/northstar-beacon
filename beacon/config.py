@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # degraded"), hence a config knob rather than a literal.
     incident_failure_threshold: int = 3
 
+    # Beat 2.2: the frontend is reached via its own port-forward, a different origin from
+    # `api`'s, so the browser needs CORS headers to allow it. This exists only to prop up
+    # the two-port-forward workaround — Beat 2.3 collapses both to one origin behind an
+    # Ingress and removes it.
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
+
 
 @lru_cache
 def get_settings() -> Settings:
