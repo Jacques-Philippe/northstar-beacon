@@ -1,8 +1,7 @@
-// Beat 2.2: a plain baked-in base URL from a build-time env var (Vite inlines
-// `import.meta.env.VITE_API_URL` at build, not read at runtime). It only works because the
-// two-port-forward setup happens to put `api` on the port this was built against — the
-// fragility the Beat 2.3 Ingress removes by collapsing both to one origin.
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+// Beat 2.3: the Ingress puts the frontend and `api` on one origin, `api` reachable under
+// the `/api` prefix. A relative path needs no per-environment config at all — no build-time
+// URL, no CORS.
+const API_BASE = "/api";
 
 async function get(path) {
   const res = await fetch(`${API_BASE}${path}`);

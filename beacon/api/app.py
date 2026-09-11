@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from beacon import logging as beacon_logging
 from beacon.api.routes import router
@@ -56,13 +55,6 @@ def create_app(
 
     app = FastAPI(title="Beacon", lifespan=lifespan)
     app.state.storage = storage
-    if settings.cors_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.cors_origins,
-            allow_methods=["GET"],
-            allow_headers=["*"],
-        )
     app.include_router(router)
     return app
 

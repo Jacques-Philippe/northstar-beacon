@@ -9,13 +9,12 @@ SHA            := $(shell git rev-parse --short HEAD)
 TAG            := $(IMAGE):$(SHA)
 FRONTEND_TAG   := $(FRONTEND_IMAGE):$(SHA)
 
-# Where the frontend build points its baked-in API calls — the beacon-dev port-forward
-# for svc/beacon-api. Override per FRONTEND_API_URL if you forward a different port.
-FRONTEND_API_URL ?= http://localhost:8000
-
 KIND_CLUSTER := beacon-dev
 
-.PHONY: image frontend-image run-api run-checker run-frontend dev-up dev-down kind-load deploy-dev dev-status
+# Pinned so `make ingress-up` is reproducible — never point this at a mutable branch ref.
+INGRESS_NGINX_VERSION := controller-v1.11.3
+
+.PHONY: image frontend-image run-api run-checker run-frontend dev-up dev-down ingress-up kind-load deploy-dev dev-status
 
 ## Build the api/checker container image, tagged with the current git short SHA.
 image:
@@ -24,7 +23,7 @@ image:
 
 ## Build the frontend container image, tagged with the current git short SHA.
 frontend-image:
-	docker build --build-arg VITE_API_URL=$(FRONTEND_API_URL) -t $(FRONTEND_TAG) frontend/
+	docker build -t $(FRONTEND_TAG) frontend/
 	@echo "built $(FRONTEND_TAG)"
 
 ## Run the api entrypoint, API published on localhost:8000.
@@ -41,13 +40,29 @@ run-frontend: frontend-image
 
 # ---- kind / dev cluster -------------------------------------------------
 
-## Create the beacon-dev kind cluster (needs `kind` on PATH: brew install kind).
+## Create the beacon-dev kind cluster (needs `kind` on PATH: brew install kind) and
+## install the ingress controller into it.
 dev-up:
 	kind create cluster --name $(KIND_CLUSTER) --config kind/dev.yaml
+	$(MAKE) ingress-up
+	@echo
+	@echo "Add this to /etc/hosts if it isn't there yet:"
+	@echo "  127.0.0.1 beacon.dev.local"
 
 ## Delete the beacon-dev cluster.
 dev-down:
 	kind delete cluster --name $(KIND_CLUSTER)
+
+## Install ingress-nginx into beacon-dev (kind's own deploy manifest — it already targets
+## nodes labelled ingress-ready=true, which kind/dev.yaml sets) and wait for the controller
+## to be ready. Waits on the Deployment, not a pod selector: right after apply there may be
+## no matching Pod yet, and `kubectl wait` on a selector that matches nothing errors
+## immediately instead of retrying — the Deployment object exists as soon as apply returns.
+ingress-up:
+	kubectl --context kind-$(KIND_CLUSTER) apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/$(INGRESS_NGINX_VERSION)/deploy/static/provider/kind/deploy.yaml
+	kubectl --context kind-$(KIND_CLUSTER) wait --namespace ingress-nginx \
+		--for=condition=available --timeout=120s \
+		deployment/ingress-nginx-controller
 
 ## Build both images and side-load them into the kind node (kind has no registry access).
 kind-load: image frontend-image

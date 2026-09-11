@@ -9,6 +9,6 @@ resources:
 # line (and committing it) is what a deploy *is*. Never `latest`.
 images:
   - name: beacon
-    newTag: "0077f4b"
+    newTag: "a13b1a0"
   - name: beacon-frontend
-    newTag: "0077f4b"
+    newTag: "a13b1a0"
