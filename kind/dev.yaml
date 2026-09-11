@@ -1,10 +1,24 @@
 # beacon-dev — the single kind cluster Acts 1–3 run against (ADR-0004, ADR-0005).
 #
-# Deliberately minimal: one node that is both control-plane and worker. No
-# extraPortMappings yet — the browser and the ingress-nginx controller arrive in
-# Beat 2.3; until then the API is reached with `kubectl port-forward`.
+# Deliberately minimal: one node that is both control-plane and worker. Beat 2.3 adds the
+# `ingress-ready` label (the ingress-nginx kind deploy manifest targets nodes with this
+# label) and extraPortMappings so a laptop port reaches the controller — before this, the
+# API and frontend were only reachable with `kubectl port-forward`.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: beacon-dev
 nodes:
   - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

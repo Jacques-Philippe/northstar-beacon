@@ -1,0 +1,23 @@
+# Routes beacon.dev.local/api to the api Service (Beat 2.3). The rewrite-target
+# annotation strips the /api prefix so `api` sees `/monitors`, not `/api/monitors` — kept
+# in its own Ingress object because that annotation applies to every path defined on the
+# Ingress it's set on, and the frontend path (ingress-frontend.yaml) must not have it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: beacon-api
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: beacon.dev.local
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: beacon-api
+                port:
+                  number: 80
